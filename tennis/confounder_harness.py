@@ -46,6 +46,25 @@ def h2h_slope(n):
     return h2h_tbl["5+"]
 
 
+def _ddint():
+    return defaultdict(int)
+
+
+def _elo0():
+    return 1500.0
+
+
+HT_BEFORE = (2024, 1, 1)
+
+
+def ht_mean(rows):
+    """Mean player height, from the matches before 2024 only: that history never changes, so the value stays fixed as
+    new matches arrive (it fills missing heights; a daily-moving mean would void the replay checkpoints, ckpt.py)."""
+    import datetime
+    cut = datetime.date(*HT_BEFORE)
+    return float(np.mean([h for r in rows if r["when"] < cut for h in (r["ht_a"], r["ht_b"]) if h and 150 < h < 220]))
+
+
 def age_at(p, when):
     b = birth.get(p)
     return None if b is None else (when.toordinal() - b) / 365.25
@@ -199,7 +218,7 @@ FEATS = [
 _ROWS = None
 
 
-def main(init_prior=None, kappa=0.0, feed=None, out_name="confounder_table.npz", verbose=True, lam_match=0.0, set_mode=None, gscale=1.0, sbin=0.0, cap=None, tbw=0.0, dw=1.0, init_rank=None, age_drift=None, lvl_w=None, opp_n=None, idle_gb=None, gas_rho=0.0, gas_nu=0.0, g_scale_pow=None, pt_lam=0.0, pt_m=2.132, pt_c=1.0, pt_mode='pooled', pt_rho=0.0, pt_nu=0.0, pt_huber=0.0, pt_link='logit', pt_mu=0.64, young_mult=None, closing_on=True, blend_w=None, snap_slams=False):
+def main(init_prior=None, kappa=0.0, feed=None, out_name="confounder_table.npz", verbose=True, lam_match=0.0, set_mode=None, gscale=1.0, sbin=0.0, cap=None, tbw=0.0, dw=1.0, init_rank=None, age_drift=None, lvl_w=None, opp_n=None, idle_gb=None, gas_rho=0.0, gas_nu=0.0, g_scale_pow=None, pt_lam=0.0, pt_m=2.132, pt_c=1.0, pt_mode='pooled', pt_rho=0.0, pt_nu=0.0, pt_huber=0.0, pt_link='logit', pt_mu=0.64, young_mult=None, closing_on=True, blend_w=None, snap_slams=False, ckpt_tag=None):
     """init_prior: dict level('tour'/'chall'/'qual') -> starting phi_gen for a
     player's first-ever scored match (None = 0, as deployed).
     kappa/feed: feed kappa * sum(feed[f] * featdiff_f) into the GAME gap used
@@ -221,21 +240,20 @@ def main(init_prior=None, kappa=0.0, feed=None, out_name="confounder_table.npz",
     host = {tid: c.most_common(1)[0][0] for tid, c in wc_ioc.items() if c and c.most_common(1)[0][1] >= 2}
     verbose and print(len(host), "events with inferred host country")
 
-    ht_vals = [h for r in rows for h in (r["ht_a"], r["ht_b"]) if h and 150 < h < 220]
-    HT_MEAN = float(np.mean(ht_vals))
+    HT_MEAN = ht_mean(rows)
 
     phi_gen = defaultdict(float)
     phi_surf = {s: defaultdict(float) for s in SURFACES}
     n_surf = {s: defaultdict(int) for s in SURFACES}
     c = defaultdict(float)
-    h2h = defaultdict(lambda: defaultdict(int))
+    h2h = defaultdict(_ddint)
     last_date = {}         # for idle decay (scored matches only, as in v18)
     last_any = {}          # any match incl. RET/W/O, for rest
     ent_rest = {}          # (mid, p) -> rest days entering event
     cumsets = defaultdict(int); cummin = defaultdict(int)
     last_inj = {}          # p -> date of last RET/W/O loss
     # ---- extras for Elo / h2h analysis (never feed back into the model) ----
-    elo = defaultdict(lambda: 1500.0); elo_s = {s_: defaultdict(lambda: 1500.0) for s_ in SURFACES}
+    elo = defaultdict(_elo0); elo_s = {s_: defaultdict(_elo0) for s_ in SURFACES}
     elo_n = defaultdict(int); elo_ns = {s_: defaultdict(int) for s_ in SURFACES}
     pair_hist = defaultdict(list)   # sorted pair -> [(ord, surf, residual for pair[0])]
     ex = defaultdict(list)
@@ -253,7 +271,32 @@ def main(init_prior=None, kappa=0.0, feed=None, out_name="confounder_table.npz",
             if r["lvl"] == "G" and r["level"] == "tour":
                 slam_ent[r["tid"]].update((r["a"], r["b"]))
     slam_snap = {}; slam_side = {}
-    for r in rows:
+    # ---- checkpoint (ckpt.py): resume from the saved state, save the state at the checkpoint date ----
+    STATE = dict(seen_player=seen_player, phi_gen=phi_gen, phi_surf=phi_surf, n_surf=n_surf, c=c, h2h=h2h, last_date=last_date,
+                 last_any=last_any, ent_rest=ent_rest, cumsets=cumsets, cummin=cummin, last_inj=last_inj, elo=elo, elo_s=elo_s,
+                 elo_n=elo_n, elo_ns=elo_ns, pair_hist=pair_hist, ex=ex, prev_was_ret_loss=prev_was_ret_loss,
+                 return_date=return_date, n_since_return=n_since_return, streak=streak, out_when=out_when, out_base=out_base,
+                 out_bo=out_bo, out_feats=out_feats, fill_tab=fill_tab)
+    start = 0; save_at = None
+    if ckpt_tag and not snap_slams:
+        import ckpt
+        args = {k_: v_ for k_, v_ in locals().items() if k_ in main.__code__.co_varnames[:main.__code__.co_argcount]}
+        ck = ckpt.Checkpoint(ckpt_tag, rows, (sorted(args.items()), SURF_FILL, MIN_SURF_MATCHES, SURF_SCALE, SURF_FILL_MODE,
+                                              SURF_SHRINK_K, BLEND_W, IDLE_GB, HT_MEAN))
+        saved = ck.load(); save_at = ckpt.first_at(rows, ck.cut)
+        if saved:
+            start = saved["i"]
+            for k_, v_ in saved["state"].items():
+                tgt = STATE[k_]
+                if isinstance(tgt, set): tgt.update(v_)
+                elif isinstance(tgt, list): tgt.extend(v_)
+                elif k_ in ("phi_surf", "n_surf", "elo_s", "elo_ns"):
+                    for s_ in SURFACES: tgt[s_].update(v_[s_])
+                else: tgt.update(v_)
+            if start == save_at: save_at = None
+    for i_ in range(start, len(rows)):
+        if i_ == save_at: ck.save(dict(i=i_, state=STATE))
+        r = rows[i_]
         when, a, b, surf, bo, mid = r["when"], r["a"], r["b"], r["surf"], r["bo"], r["mid"]
         if snap_slams and r["lvl"] == "G" and r["level"] == "tour" and r["tid"] not in slam_snap:
             ent = slam_ent[r["tid"]]; ss_ = {}

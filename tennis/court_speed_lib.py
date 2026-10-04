@@ -14,10 +14,15 @@ def ekey(r):
     return (r["level"], k, court(r))
 
 
-def build(allrows):
+def _one():
+    return 1.0
+
+
+def build(allrows, tag=None):
+    """tag: checkpoint name (ckpt.py) -- resume from / save the state at the checkpoint date; None = always from scratch."""
     n = sum(1 for r in allrows if S.parse_sets(r["score"]) and parse_games(r["score"]) and not (r["ret"] or r["wo"] or r["dq"]))
     LEAGUE0 = 0.07
-    ace_skill = defaultdict(lambda: 1.0); ace_conc = defaultdict(lambda: 1.0)   # multiplicative, EW
+    ace_skill = defaultdict(_one); ace_conc = defaultdict(_one)   # multiplicative, EW
     league = LEAGUE0
     ev_hist = defaultdict(list)       # event key -> [(year, log_ratio, weight_points)]
     surf_mean = defaultdict(float); surf_w = defaultdict(float)
@@ -26,7 +31,23 @@ def build(allrows):
     speed = np.zeros(n); has_speed = np.zeros(n, bool)
     acer_a = np.zeros(n); acer_b = np.zeros(n)
     i_sc = 0
-    for r in allrows:
+    start = 0; save_at = None
+    if tag:
+        import ckpt
+        ck = ckpt.Checkpoint(tag, allrows)
+        saved = ck.load(); save_at = ckpt.first_at(allrows, ck.cut)
+        if saved:
+            st = saved["state"]; start = st["i"]; i_sc = st["i_sc"]; league = st["league"]
+            ace_skill.update(st["ace_skill"]); ace_conc.update(st["ace_conc"]); ev_hist.update(st["ev_hist"])
+            surf_mean.update(st["surf_mean"]); surf_w.update(st["surf_w"])
+            for A, k in ((speed, "speed"), (has_speed, "has_speed"), (acer_a, "acer_a"), (acer_b, "acer_b")): A[:i_sc] = st[k]
+            if start == save_at: save_at = None
+    for j in range(start, len(allrows)):
+        if j == save_at:
+            ck.save(dict(state=dict(i=j, i_sc=i_sc, league=league, ace_skill=ace_skill, ace_conc=ace_conc, ev_hist=ev_hist,
+                                    surf_mean=surf_mean, surf_w=surf_w, speed=speed[:i_sc], has_speed=has_speed[:i_sc],
+                                    acer_a=acer_a[:i_sc], acer_b=acer_b[:i_sc])))
+        r = allrows[j]
         scored = S.parse_sets(r["score"]) and parse_games(r["score"]) and not (r["ret"] or r["wo"] or r["dq"])
         k = ekey(r); cr = court(r); yr = r["when"].year
         if scored:

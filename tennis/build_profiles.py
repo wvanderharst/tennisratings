@@ -36,7 +36,8 @@ def hook(i, r, X):
     pre[i] = {p: state(p, r["surf"], X) for p in (r["a"], r["b"])}
 def hook_post(i, r, X):
     post[i] = {p: state(p, r["surf"], X) for p in (r["a"], r["b"])}
-z, st = CE.replay(EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], hook=hook, hook_post=hook_post, **CFG); z = z[RIDX]
+z, st = CE.replay_ckpt(f"profiles_{TOUR}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=dict(pre=pre, post=post),
+                       hook=hook, hook_post=hook_post, **CFG); z = z[RIDX]
 
 # full-model pre-match probability (same corrections refit as the odds export)
 C = np.load(f"{SCR}/tennis/cache_{TOUR}.npz"); corr = C["corr"].copy(); tr = C["tr"]

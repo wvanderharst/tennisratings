@@ -31,7 +31,7 @@ base = T["base"]; X10 = T["X"][:, [f.index(x) for x in sel]]; when = T["when"]
 if TOUR == "atp":     # production age cap
     ag = np.array([[H.age_at(r["a"], r["when"]) or 26.0, H.age_at(r["b"], r["when"]) or 26.0] for r in rows])
     c32 = np.minimum(np.maximum(0, ag - 32), 3); X10[:, sel.index("age_over32")] = c32[:, 0] - c32[:, 1]
-cs = CSL.build(allrows); acer = cs["acer_a"] - cs["acer_b"]; court = np.array([CSL.court(r) for r in rows]); has = cs["has_speed"]; sp = cs["speed"]
+cs = CSL.build(allrows, tag=f"court_{TOUR}"); acer = cs["acer_a"] - cs["acer_b"]; court = np.array([CSL.court(r) for r in rows]); has = cs["has_speed"]; sp = cs["speed"]
 # Fixed dates (= 80% / 85% points of the data when the model was fitted), so daily data updates don't move the split
 split = datetime.date(2017, 2, 27).toordinal() if TOUR == "atp" else datetime.date(2018, 10, 8).toordinal()
 tr = when < split; te = ~tr

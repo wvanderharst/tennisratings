@@ -1,10 +1,17 @@
-# Daily: download the latest TennisMyLife data, rebuild all ratings, publish the site to GitHub Pages.
+# Daily: download the latest TennisMyLife data, update the ratings, publish the site to GitHub Pages.
 # Needs Settings -> Pages -> Source: "GitHub Actions". Runs from the default branch.
+# Incremental: the replay checkpoints (state/) are kept in the Actions cache, so a daily run only replays the last
+# weeks. Without a usable cache (first run, cache expired after 7 idle days, code changed) it does a full rebuild.
 name: Update tennis ratings
 on:
   schedule:
     - cron: "17 5 * * *"        # every day 05:17 UTC
-  workflow_dispatch: {}          # "Run workflow" button on the Actions tab
+  workflow_dispatch:             # "Run workflow" button on the Actions tab
+    inputs:
+      full:
+        description: "Full rebuild from 1968 (ignore the checkpoints)"
+        type: boolean
+        default: false
   push:                          # also rebuild and publish when the default branch changes
     branches: [main, claude/runnable-repository-setup-cmr5zd]
     paths-ignore: ["**.md"]
@@ -22,16 +29,30 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
+      - name: Restore replay checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: replay-state-${{ github.run_id }}
+          restore-keys: replay-state-
       - name: Update data and rebuild
+        env:
+          FULL_INPUT: ${{ inputs.full }}
+          EVENT: ${{ github.event_name }}
         run: |
-          D=.; [ -f tennis/update_data.py ] || D=tennis_model
-          cd "$D"
+          # full rebuild on request, and every Monday as a safety net
+          if [ "$FULL_INPUT" = true ] || { [ "$EVENT" = schedule ] && [ "$(date -u +%u)" = 1 ]; }; then export TENNIS_FULL=1; echo "full rebuild"; fi
           mkdir -p site_v8 work
           python3 tennis/update_data.py --rebuild
           mkdir -p "$GITHUB_WORKSPACE/_site"
           cp site_v8/*.json site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/"
           cp site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/index.html"
           cp tennis_model_documentation.pdf "$GITHUB_WORKSPACE/_site/" || true
+      - name: Save replay checkpoints
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: replay-state-${{ github.run_id }}
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
   deploy:

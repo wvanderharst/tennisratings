@@ -52,7 +52,7 @@ def hook(i, r, X):
             st[p] = (v, v, 0.0)
     snap[tid] = dict(when=when, surf=surf, st=st, rank=rank, mu=X["mu"][surf or "Hard"], name=r["tname"])
 EXT, RIDX, _ = CE.build_ext(allrows)
-CE.replay(EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], hook=hook, **CFG)
+CE.replay_ckpt(f"slams_{T}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=dict(snap=snap), hook=hook, **CFG)
 RF = json.load(open(f"{OUT}/ret_fit_{T}.json")); RR, BB = RF["r_slam"], max(0.0, RF["b_slam"])
 
 def pwin(A, B, mu):
@@ -74,7 +74,17 @@ def seed_slots(N, ns):
     return slots[:ns]
 rng = np.random.default_rng(7); NS = 4000
 res = []
-for tid, sp in sorted(snap.items(), key=lambda kv: kv[1]["when"]):
+import ckpt
+ITEMS = sorted(snap.items(), key=lambda kv: kv[1]["when"])
+LOOP = ckpt.Loop(f"slamsim_{T}", allrows, (CFG, CFE, RF), [sp["when"] for _, sp in ITEMS])
+if LOOP.saved:
+    rng.bit_generator.state = LOOP.saved["rng"]; res = LOOP.saved["res"]
+    for line in LOOP.saved["log"]: print(line)
+LOG = list(LOOP.saved["log"]) if LOOP.saved else []
+loop_state = lambda: dict(rng=rng.bit_generator.state, res=res, log=LOG)
+for k_ev in range(LOOP.start, len(ITEMS)):
+    LOOP.at(k_ev, loop_state)
+    tid, sp = ITEMS[k_ev]
     L = ev[tid]; fin = [m for m in L if m["rnd"] == "F"]
     if not fin: continue
     champ = fin[0]["a"]; P = list(sp["st"]); n = len(P); idx = {p: i for i, p in enumerate(P)}
@@ -114,5 +124,7 @@ for tid, sp in sorted(snap.items(), key=lambda kv: kv[1]["when"]):
                     gap_to_best=float(lvl[order[0]] - lvl[ci]), champ_lvl=float(lvl[ci]), best_lvl=float(lvl[order[0]]), field_lvl=[round(float(v), 3) for v in lvl], opp=opp, opp_lvl_rank=[int(lrank[idx[o]]) for o in opp if o in idx],
                     opp_lvl=[float(lvl[idx[o]]) for o in opp if o in idx], path_p=float(np.prod(pp)), match_p=[float(x) for x in pp],
                     n_top10=int(sum(1 for o in opp if o in idx and lrank[idx[o]] <= 10)), rounds=[m["rnd"] for m in path]))
-    print(f"{sp['when'].year} {sp['name'][:16]:16s} {champ:22s} lvl#{lrank[ci]:<3d} title {title[ci]*100:5.1f}% (#{trank}) fav {P[fav]} {title[fav]*100:4.1f}% path {np.prod(pp)*100:5.1f}%", flush=True)
+    LOG.append(f"{sp['when'].year} {sp['name'][:16]:16s} {champ:22s} lvl#{lrank[ci]:<3d} title {title[ci]*100:5.1f}% (#{trank}) fav {P[fav]} {title[fav]*100:4.1f}% path {np.prod(pp)*100:5.1f}%")
+    print(LOG[-1], flush=True)
+LOOP.at(len(ITEMS), loop_state)
 json.dump(res, open(f"{OUT}/slam_eve_{T}.json", "w"), indent=0)

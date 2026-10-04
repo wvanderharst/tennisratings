@@ -27,7 +27,7 @@ split = when[te].min(); vcut = when[vm].min()
 best = None
 for k, side in ((CFG.get("k_ret", 1.0), CFG.get("ret_side", "winner")),):     # chosen setting (sr_clone_fit.json)
     rows = ext
-    z, _ = CE.replay(rows, H.age_at, CFE["init_rank"], CFE["init_prior"], **dict(CFG, k_ret=k, ret_side=side))
+    z, _ = CE.replay_ckpt(f"rating_{T}", allrows, rows, H.age_at, CFE["init_rank"], CFE["init_prior"], **dict(CFG, k_ret=k, ret_side=side))
     zr = z[rated_idx]; F = np.column_stack([zr, corr]); wv = fitz(F, fm); wt = fitz(F, tr); wa = fitz(F, ALL)
     sel = L(F[vm] @ wv).mean()
     print(f"  partial points weight {k:4.2f} ({side:6s}): selection {sel:.5f} | held-out {L((F @ wt)[te]).mean():.5f} | 2005+ {L((F @ wa)[ALL]).mean():.5f}", flush=True)

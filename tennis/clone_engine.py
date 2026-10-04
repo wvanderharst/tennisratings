@@ -23,7 +23,8 @@ SURF = ("Hard", "Clay", "Grass")
 def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), gscale=0.8, pt_lam=1.0, pt_c=0.7, pt_m=2.132,
            pred="game", resid="pooled", split=False, k_s=1.0, k_r=1.0, blend_s=0.6, blend_r=0.6, gain_early=1.0, gain_settle=15.0,
            gb=None, ga=None, mu_k=0.0005, h2h=True, hm=1.0, res_hm=False, k_d=1.0, hook=None, surf_k=1.0, surf_early=1.0, surf_settle=10.0,
-           gap=False, lam=0.4, gwt=(0.6, 0.3, 0.1), clamp=None, hook_post=None, k_ret=1.0, ret_side='both'):
+           gap=False, lam=0.4, gwt=(0.6, 0.3, 0.1), clamp=None, hook_post=None, k_ret=1.0, ret_side='both',
+           init=None, save_at=None, on_save=None):
     GA = H.ga_rate if ga is None else ga; GB = H.gb_persist if gb is None else gb
     # state: serve & return (identical when split=False), general + per surface
     sg = defaultdict(float); rg = defaultdict(float)
@@ -32,12 +33,28 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
     mu = defaultdict(lambda: 0.55); nm = defaultdict(int)
     n = len(rows); S4 = np.zeros((n, 5)); out = np.zeros(n); alt = np.zeros(n); dsv = np.zeros(n); drt = np.zeros(n)
     dy, do_, ay, ao = age_drift
+    start = 0
+    if init is not None:               # resume from a checkpoint (see ckpt.py / replay_ckpt below)
+        start = init["i"]; gap = init["gap"]
+        sg.update(init["sg"]); rg.update(init["rg"]); c.update(init["c"]); last.update(init["last"]); seen.update(init["seen"])
+        for x in SURF: ss[x].update(init["ss"][x]); rs[x].update(init["rs"][x]); ns[x].update(init["ns"][x])
+        for k_, v_ in init["hh"].items(): hh[k_].update(v_)
+        ftab.update(init["ftab"]); mu.update(init["mu"]); nm.update(init["nm"])
+        for A, k_ in ((S4, "S4"), (out, "out"), (alt, "alt"), (dsv, "dsv"), (drt, "drt")): A[:start] = init[k_]
+
+    def snapshot(i):
+        return dict(i=i, gap=gap, sg=dict(sg), rg=dict(rg), c=dict(c), last=dict(last), seen=set(seen),
+                    ss={x: dict(ss[x]) for x in SURF}, rs={x: dict(rs[x]) for x in SURF}, ns={x: dict(ns[x]) for x in SURF},
+                    hh={k_: dict(v_) for k_, v_ in hh.items()}, ftab=dict(ftab), mu=dict(mu), nm=dict(nm),
+                    S4=S4[:i].copy(), out=out[:i].copy(), alt=alt[:i].copy(), dsv=dsv[:i].copy(), drt=drt[:i].copy())
 
     def qmap(x, gsort, ssort):
         q = np.searchsorted(gsort, x) / len(gsort)
         return float(np.interp(q, (np.arange(len(ssort)) + 0.5) / len(ssort), ssort))
 
-    for i, r in enumerate(rows):
+    for i in range(start, n):
+        if i == save_at: on_save(snapshot(i))
+        r = rows[i]
         a, b, when, surf, bo = r["a"], r["b"], r["when"], r["surf"], r["bo"]
         for p in (a, b):
             if p not in seen:
@@ -183,6 +200,7 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
                         else:
                             for x in SURF: D[x][p] += sh
         if hook_post is not None: hook_post(i, r, dict(sg=sg, rg=rg, ss=ss, rs=rs, c=c))
+    if save_at == n: on_save(snapshot(n))
     return out, dict(sg=sg, rg=rg, ss=ss, rs=rs, ns=ns, c=c, mu=dict(mu), last=last, dsv=dsv, drt=drt, alt=alt, S4=S4)
 
 
@@ -199,3 +217,22 @@ def build_ext(allrows):
             q = dict(r); q["upd_only"] = True; q["_oid"] = id(r); q["pts"] = r["pts"] if (r["ret"] and not r["wo"]) else None
             where[id(r)] = len(ext); ext.append(q)
     return ext, np.array(rated_idx), where
+
+
+def replay_ckpt(tag, allrows, rows, age_at, init_rank, init_prior, carry=None, deps=None, **kw):
+    """replay() that resumes from / saves a checkpoint (ckpt.py). allrows: the full sorted match list `rows` was built from;
+    carry: dict name -> container the hooks fill (restored in place on resume, saved with the state);
+    deps: anything else the hooks' results depend on."""
+    import ckpt
+    carry = carry or {}
+    settings = sorted((k_, v_) for k_, v_ in kw.items() if not callable(v_))      # hooks are covered by the code hash
+    ck = ckpt.Checkpoint(tag, allrows, (init_rank, init_prior, settings, deps))
+    saved = ck.load()
+    init = None
+    if saved is not None:
+        init = saved["state"]
+        for k_, v_ in saved["carry"].items(): ckpt.restore(carry[k_], v_)
+    k = ckpt.first_at(rows, ck.cut)
+    on_save = lambda st: ck.save(dict(state=st, carry=carry))      # written immediately = the carry as of row k
+    save_at = k if (init is None or init["i"] < k) else None
+    return replay(rows, age_at, init_rank, init_prior, init=init, save_at=save_at, on_save=on_save, **kw)

@@ -153,7 +153,10 @@ def hook(i, r, X):
     mc[a] += 1; mc[b] += 1
 
 EXT, RIDX, _ = CE.build_ext(allrows)
-z, _ = CE.replay(EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], hook=hook, **CFG); z = z[RIDX]
+carry = dict(stab=stab, stab_t=stab_t, mc=mc, first=first, fill=fill, thr_m=thr_m, thr_w=thr_w, snaps=snaps, snaps_f=snaps_f,
+             markers=markers, state=state, ptr=ptr, queries=queries, CUR_I=CUR_I)
+z, _ = CE.replay_ckpt(f"traj_{TOUR}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=carry,
+                      deps=(sorted(SELECTED), sorted(DETAIL)), hook=hook, **CFG); z = z[RIDX]
 # deciding-set clutch (same running definition as the odds export), filled in pre-match for every snapshot
 dsum = defaultdict(float); dn = defaultdict(int)
 for i, r in enumerate(rows):

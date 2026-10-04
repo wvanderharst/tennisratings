@@ -51,7 +51,7 @@ def hook(i, r, X):
     bo = max(m["bo"] for m in L)
     snap[tid] = dict(when=when, st=st, rank=rank, mu=X["mu"][surf or "Hard"], bo=bo, slam=r["lvl"] == "G")
 EXT, RIDX, _ = CE.build_ext(allrows)
-CE.replay(EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], hook=hook, **CFG)
+CE.replay_ckpt(f"titles_{T}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=dict(snap=snap), hook=hook, **CFG)
 RF = json.load(open(f"{OUT}/ret_fit_{T}.json"))
 
 def pwin(A, B, mu, bo):
@@ -72,7 +72,15 @@ def seed_slots(N, ns):
 rng = np.random.default_rng(11); RS = [None]
 agg = collections.defaultdict(lambda: dict(se=0, st=0, sx=0.0, e=0, t=0, x=0.0))
 done = 0; recs = []
-for tid, sp in sorted(snap.items(), key=lambda kv: kv[1]["when"]):
+import ckpt
+ITEMS = sorted(snap.items(), key=lambda kv: kv[1]["when"])
+LOOP = ckpt.Loop(f"titlesim_{T}", allrows, (CFG, CFE, RF), [sp["when"] for _, sp in ITEMS])
+if LOOP.saved:
+    rng.bit_generator.state = LOOP.saved["rng"]; agg.update(LOOP.saved["agg"]); recs = LOOP.saved["recs"]; done = LOOP.saved["done"]
+loop_state = lambda: dict(rng=rng.bit_generator.state, agg={p: dict(v) for p, v in agg.items()}, recs=recs, done=done)
+for k_ev in range(LOOP.start, len(ITEMS)):
+    LOOP.at(k_ev, loop_state)
+    tid, sp = ITEMS[k_ev]
     L = ev[tid]; champ = [m for m in L if m["rnd"] == "F"][0]["a"]
     P = list(sp["st"]); n = len(P); idx = {p: i for i, p in enumerate(P)}
     N = 1 << (n - 1).bit_length(); M = np.full((N, N), 0.5)
@@ -117,6 +125,7 @@ for tid, sp in sorted(snap.items(), key=lambda kv: kv[1]["when"]):
         recs.append((sp['when'].year, int(sp['slam']), n, w) + tuple(round(float(tt[idx[p]]), 5) for tt in titles))
     done += 1
     if done % 500 == 0: print(done, "events", sp["when"], flush=True)
+LOOP.at(len(ITEMS), loop_state)
 json.dump({p: dict(v) for p, v in agg.items()}, open(f"{OUT}/titles_expected_{T}.json", "w")); json.dump(recs, open(f"{OUT}/title_chances_{T}.json", "w"))
 print(T, done, "events done")
 for p in sorted(agg, key=lambda p: -agg[p]["t"])[:10]:

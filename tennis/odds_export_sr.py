@@ -31,7 +31,7 @@ allrows = H.load()
 rows = [r for r in allrows if S.parse_sets(r["score"]) and parse_games(r["score"]) and not (r["ret"] or r["wo"] or r["dq"])]
 n = len(rows)
 EXT, RIDX, _ = CE.build_ext(allrows)
-z, st = CE.replay(EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], **CFG); z = z[RIDX]
+z, st = CE.replay_ckpt(f"rating_{TOUR}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], **CFG); z = z[RIDX]
 sg, rg, ss, rs, ns, c, mu, last = (st[k] for k in ("sg", "rg", "ss", "rs", "ns", "c", "mu", "last"))
 
 # ---------------- corrections refit on top of the new rating ----------------
@@ -75,9 +75,9 @@ for r in allrows:
         h = r["ht_" + s]
         if h and 150 < h < 220: hts[p] = h
         if r["rank_" + s]: last_rank[p] = (r["rank_" + s], r["when"])
-HT_MEAN = float(np.mean([h for r in allrows for h in (r["ht_a"], r["ht_b"]) if h and 150 < h < 220]))
+HT_MEAN = H.ht_mean(allrows)      # same fixed value as the corrections replay
 clutch = {p: dsum[p] / (dn[p] + 50) for p in dsum}
-cs_b = CSL.build(allrows); ace = {p: math.log(v) for p, v in cs_b["ace_skill"].items()}
+cs_b = CSL.build(allrows, tag=f"court_{TOUR}"); ace = {p: math.log(v) for p, v in cs_b["ace_skill"].items()}
 
 # classic Elo for comparison (Tennis Abstract style: K = 250/(n+5)^0.4, win/loss only; surface Elo per surface)
 elo = defaultdict(lambda: 1500.0); elo_s = {x: defaultdict(lambda: 1500.0) for x in SURF}
