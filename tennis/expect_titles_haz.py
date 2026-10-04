@@ -74,7 +74,8 @@ agg = collections.defaultdict(lambda: dict(se=0, st=0, sx=0.0, e=0, t=0, x=0.0))
 done = 0; recs = []
 import ckpt
 ITEMS = sorted(snap.items(), key=lambda kv: kv[1]["when"])
-LOOP = ckpt.Loop(f"titlesim_{T}", allrows, (CFG, CFE, RF), [sp["when"] for _, sp in ITEMS])
+RF_USED = {k: float(f"{RF[k]:.9g}") for k in ("r_slam", "b_slam", "r_other", "b_other")}   # the values used; last-bit noise ignored
+LOOP = ckpt.Loop(f"titlesim_{T}", allrows, (CFG, CFE, RF_USED), [sp["when"] for _, sp in ITEMS])
 if LOOP.saved:
     rng.bit_generator.state = LOOP.saved["rng"]; agg.update(LOOP.saved["agg"]); recs = LOOP.saved["recs"]; done = LOOP.saved["done"]
 loop_state = lambda: dict(rng=rng.bit_generator.state, agg={p: dict(v) for p, v in agg.items()}, recs=recs, done=done)

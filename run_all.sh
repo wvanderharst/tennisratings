@@ -7,6 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/tennis"
 py=${PYTHON:-python3}
 export PYTHONHASHSEED=0                 # fixed set/frozenset order -> identical output files run to run
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1   # same float summation order every run (the tours run in parallel anyway)
 
 tour() {
   T=$1

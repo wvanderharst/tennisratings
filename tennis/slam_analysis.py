@@ -76,7 +76,7 @@ rng = np.random.default_rng(7); NS = 4000
 res = []
 import ckpt
 ITEMS = sorted(snap.items(), key=lambda kv: kv[1]["when"])
-LOOP = ckpt.Loop(f"slamsim_{T}", allrows, (CFG, CFE, RF), [sp["when"] for _, sp in ITEMS])
+LOOP = ckpt.Loop(f"slamsim_{T}", allrows, (CFG, CFE, f"{RR:.9g}", f"{BB:.9g}"), [sp["when"] for _, sp in ITEMS])
 if LOOP.saved:
     rng.bit_generator.state = LOOP.saved["rng"]; res = LOOP.saved["res"]
     for line in LOOP.saved["log"]: print(line)
