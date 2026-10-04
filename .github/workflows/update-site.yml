@@ -1,6 +1,5 @@
 # Daily: download the latest TennisMyLife data, rebuild all ratings, publish the site to GitHub Pages.
-# This file must be at  .github/workflows/update-site.yml  in the ROOT of the repository.
-# Works whether the project files are at the repository root or inside a tennis_model/ folder.
+# Needs Settings -> Pages -> Source: "GitHub Actions". Runs from the default branch.
 name: Update tennis ratings
 on:
   schedule:
