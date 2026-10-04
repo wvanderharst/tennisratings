@@ -10,3 +10,10 @@ tennis/cache_*_rows.pkl
 work/*.npz
 work/*.pkl
 update.log
+work/odds_data_*_sr.json
+work/traj_data_*_sr.json
+work/title_chances_*.json
+work/titles_expected_*.json
+work/slam_eve_*.json
+work/slam_champions_*
+work/tennis_model_documentation.pdf
