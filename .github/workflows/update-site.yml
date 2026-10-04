@@ -76,7 +76,7 @@ jobs:
           git add atp_uploads wta_data last_update.txt
           if git diff --cached --quiet; then echo "no data changes"; exit 0; fi
           git commit -m "Data update: $(cat last_update.txt)"
-          for i in 1 2 3; do git push && exit 0; git pull --rebase; done; exit 1
+          for i in 1 2 3; do git push && exit 0; git pull --rebase --autostash; done; exit 1   # someone else pushed meanwhile
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
   deploy:
