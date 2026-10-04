@@ -22,8 +22,8 @@ bash run_all.sh                                  # first run ~8-12 min (full rep
 bash update.sh
 ```
 
-To publish automatically every day, enable GitHub Pages with Settings → Pages → Source: **GitHub Actions**
-(see section 3, option A). The daily schedule only runs from the repository's default branch.
+The site updates itself every Saturday through GitHub Actions (Settings → Pages → Source: **GitHub Actions**; see
+section 3, option A). The schedule only runs from the repository's default branch.
 
 ## 1. Hosting the website (no Python needed)
 
@@ -127,23 +127,27 @@ Other ways to run it:
 - **The downloaded files:** each update replaces `atp_uploads/` (seasons 2024+) and `wta_data/wta_tml.csv` with the
   fresh download. They are full copies of those seasons, so nothing is lost; matches TennisMyLife corrects get corrected here too.
 
-**Run it every day, option A: GitHub (recommended, no computer needed)**
+**Run it automatically, option A: GitHub (recommended, no computer needed)**
 
 This repository includes `.github/workflows/update-site.yml`.
 
 1. Push this repository to GitHub (already done if you cloned it). Public repositories get free Actions minutes and free Pages.
 2. Go to Settings → Pages → Source: **GitHub Actions**.
-3. Every day at 05:17 UTC the workflow downloads the data, rebuilds and publishes the site at `https://<you>.github.io/<repo>/`.
-   The checkpoints (`state/`) are kept in the Actions cache between runs, so a daily run only replays the last weeks.
-   Without a usable cache (first run, code changed, or no run for 7 days) it does a full rebuild. Every Monday it does
-   a full rebuild anyway as a safety net.
-4. Actions → "Update tennis ratings" → **Run workflow** starts it by hand (tick "Full rebuild" to ignore the checkpoints).
+3. Every Saturday at 05:17 UTC the workflow downloads the data, commits the updated match files (`atp_uploads/`,
+   `wta_data/`, `last_update.txt`) to the repository, rebuilds and publishes the site at `https://<you>.github.io/<repo>/`.
+   The weekly commit also keeps the schedule alive (GitHub switches off scheduled workflows after 60 days without
+   repository activity). The prebuilt `site_v8/` in the repository is not updated by it; the live site is.
+4. The checkpoints (`state/`) are kept in the Actions cache between runs, so a run only replays the last weeks.
+   GitHub deletes cache entries unused for 7 days, so a small Wednesday job touches the cache. Without a usable cache
+   (first run, code changed) the run is a full rebuild, and the first Saturday of each month is a full rebuild anyway
+   as a safety net.
+5. Actions → "Update tennis ratings" → **Run workflow** starts it by hand (tick "Full rebuild" to ignore the checkpoints).
 
-**Run it every day, option B: on your own computer**
+**Run it automatically, option B: on your own computer**
 
 - **macOS/Linux:** add a cron job with `crontab -e`:
-  `17 7 * * * /path/to/tennisratings/update.sh >> /path/to/tennisratings/update.log 2>&1`
-- **Windows:** in Task Scheduler, create a daily task that runs `python tennis\update_data.py --rebuild` with "Start in" set to the repository folder.
+  `17 7 * * 6 /path/to/tennisratings/update.sh >> /path/to/tennisratings/update.log 2>&1`
+- **Windows:** in Task Scheduler, create a weekly task that runs `python tennis\update_data.py --rebuild` with "Start in" set to the repository folder.
 - **Publishing:** upload `site_v8/` afterwards (section 1).
 
 ## 4. Where things are
@@ -153,7 +157,7 @@ tennisratings/
   requirements.txt           Python packages for the rebuild
   update.sh                  download latest data + full rebuild
   run_all.sh                 full rebuild
-  .github/workflows/         daily GitHub Actions job (update + publish to Pages)
+  .github/workflows/         weekly GitHub Actions job (update + commit data + publish to Pages)
   tennis/                    Python code + page template (rating_history_artifact_v8.html, app_tabs_v8.js)
     clone_engine.py          the rating engine (serve/return update, surface gaps, closing, retirements)
     confounder_harness.py    data loading, set/match probability chain, calibration constants

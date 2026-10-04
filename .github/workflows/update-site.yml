@@ -1,11 +1,14 @@
-# Daily: download the latest TennisMyLife data, update the ratings, publish the site to GitHub Pages.
+# Weekly (Saturday): download the latest TennisMyLife data, commit it to the repository, update the ratings and
+# publish the site to GitHub Pages.
 # Needs Settings -> Pages -> Source: "GitHub Actions". Runs from the default branch.
-# Incremental: the replay checkpoints (state/) are kept in the Actions cache, so a daily run only replays the last
-# weeks. Without a usable cache (first run, cache expired after 7 idle days, code changed) it does a full rebuild.
+# Incremental: the replay checkpoints (state/) are kept in the Actions cache, so a run only replays the last weeks.
+# GitHub deletes cache entries unused for 7 days, so a small Wednesday job touches the cache in between.
+# Without a usable cache (first run, code changed, cache gone) the run is a full rebuild.
 name: Update tennis ratings
 on:
   schedule:
-    - cron: "17 5 * * *"        # every day 05:17 UTC
+    - cron: "17 5 * * 6"        # Saturday 05:17 UTC: update + publish
+    - cron: "17 5 * * 3"        # Wednesday 05:17 UTC: keep the checkpoint cache alive (no update)
   workflow_dispatch:             # "Run workflow" button on the Actions tab
     inputs:
       full:
@@ -15,15 +18,24 @@ on:
   push:                          # also rebuild and publish when the default branch changes
     branches: [main, claude/runnable-repository-setup-cmr5zd]
     paths-ignore: ["**.md"]
-permissions:
-  contents: read
-  pages: write
-  id-token: write
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
+  keep-cache:
+    if: github.event.schedule == '17 5 * * 3'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, actions: read }
+    steps:
+      - name: Touch the replay checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: replay-state-${{ github.run_id }}
+          restore-keys: replay-state-
   build:
+    if: github.event.schedule != '17 5 * * 3'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions: { contents: write }       # commits the updated data files
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,8 +52,8 @@ jobs:
           FULL_INPUT: ${{ inputs.full }}
           EVENT: ${{ github.event_name }}
         run: |
-          # full rebuild on request, and every Monday as a safety net
-          if [ "$FULL_INPUT" = true ] || { [ "$EVENT" = schedule ] && [ "$(date -u +%u)" = 1 ]; }; then export TENNIS_FULL=1; echo "full rebuild"; fi
+          # full rebuild on request, and on the first Saturday of the month as a safety net
+          if [ "$FULL_INPUT" = true ] || { [ "$EVENT" = schedule ] && [ "$(date -u +%d)" -le 7 ]; }; then export TENNIS_FULL=1; echo "full rebuild"; fi
           mkdir -p site_v8 work
           python3 tennis/update_data.py --rebuild
           mkdir -p "$GITHUB_WORKSPACE/_site"
@@ -53,11 +65,22 @@ jobs:
         with:
           path: state
           key: replay-state-${{ github.run_id }}
+      - name: Commit the updated data
+        # the downloaded match files + last_update.txt; a commit every week also keeps the schedule enabled
+        # (GitHub turns off scheduled workflows after 60 days without repository activity)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add atp_uploads wta_data last_update.txt
+          if git diff --cached --quiet; then echo "no data changes"; exit 0; fi
+          git commit -m "Data update: $(cat last_update.txt)"
+          for i in 1 2 3; do git push && exit 0; git pull --rebase; done; exit 1
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions: { pages: write, id-token: write }
     environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }
     steps:
       - id: d
