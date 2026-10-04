@@ -1,0 +1,1196 @@
+<title>Champion Rating Trajectories</title>
+<style>
+  :root {
+    --ink: #1c1a17;
+    --ink-soft: #706a5f;
+    --paper: #f6f3ed;
+    --panel: #fffdf9;
+    --panel-2: #efe9de;
+    --line: #e2dccc;
+    --accent: #a13d1f;
+    --accent-soft: #f3ded2;
+    --ao: #2c6ea5;
+    --rg: #b0552b;
+    --wm: #2f7a4d;
+    --us: #6e4396;
+    --hard: #2c6ea5;
+    --clay: #b0552b;
+    --grass: #2f7a4d;
+    --grid: #e6e0d2;
+    --shadow: 0 1px 2px rgba(28,26,23,.04), 0 8px 24px -12px rgba(28,26,23,.18);
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'Inter', -apple-system, Segoe UI, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #efe9e0;
+      --ink-soft: #a49b8c;
+      --paper: #16140f;
+      --panel: #1e1b15;
+      --panel-2: #262119;
+      --line: #332e24;
+      --accent: #e08a5c;
+      --accent-soft: #2e2117;
+      --grid: #2a251c;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #efe9e0;
+    --ink-soft: #a49b8c;
+    --paper: #16140f;
+    --panel: #1e1b15;
+    --panel-2: #262119;
+    --line: #332e24;
+    --accent: #e08a5c;
+    --accent-soft: #2e2117;
+    --grid: #2a251c;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--sans); margin: 0;
+    padding-inline: 20px; padding-block: 26px 64px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  .titlebar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .titlebar h1 {
+    font-family: var(--serif); font-weight: 600;
+    font-size: clamp(26px, 4vw, 34px); margin: 0; letter-spacing: -0.01em;
+  }
+  .titlebar .sub { color: var(--ink-soft); font-size: 13px; margin-top: 4px; }
+
+  /* ---- hero chart card ---- */
+  .chartcard {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px 20px 14px; box-shadow: var(--shadow); margin-bottom: 16px;
+  }
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 14px; flex-wrap: wrap; margin-bottom: 6px;
+  }
+  .toolbar-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .seg {
+    display: inline-flex; background: var(--panel-2); border-radius: 9px; padding: 3px; gap: 2px;
+  }
+  .seg button {
+    border: none; background: transparent; color: var(--ink-soft);
+    padding: 6px 13px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; font-family: var(--sans);
+  }
+  .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+  .seg button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .switchrow { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-soft); cursor: pointer; user-select: none; }
+  .switch {
+    position: relative; width: 30px; height: 17px; border-radius: 999px; background: var(--panel-2);
+    border: 1px solid var(--line); flex: none; transition: background .15s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 1px; left: 1px; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--ink-soft); transition: transform .15s, background .15s;
+  }
+  .switchrow input { display: none; }
+  .switchrow input:checked ~ .switch { background: var(--accent); border-color: var(--accent); }
+  .switchrow input:checked ~ .switch::after { transform: translateX(13px); background: #fff; }
+  .switchrow:hover { color: var(--ink); }
+  .switchrow.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  .legend-slams { display: flex; gap: 10px; font-size: 11.5px; color: var(--ink-soft); flex-wrap: wrap; }
+  .legend-slams span { display:inline-flex; align-items:center; gap:4px; }
+  .legend-slams i { width: 9px; height: 9px; border-radius: 50%; display:inline-block; }
+  .legend-slams i.ring { border: 2px solid; background: transparent; }
+
+  svg { width: 100%; height: auto; display: block; }
+  svg .plotarea { cursor: crosshair; touch-action: none; }
+  .zoomrect { fill: var(--accent); opacity: 0.12; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+  .zoomhint { fill: var(--ink-soft); font-size: 10px; font-family: var(--sans); opacity: 0.6; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .gridline.zero { stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.5; }
+  .axislabel { fill: var(--ink-soft); font-size: 10.5px; font-family: var(--mono); }
+  .axistitle { fill: var(--ink-soft); font-size: 10.5px; font-family: var(--sans); font-weight: 600; letter-spacing: .02em; }
+  .trajline {
+    fill: none; stroke-width: 2.5; opacity: 0.95; stroke-linecap: round; stroke-linejoin: round;
+    transition: opacity .15s, stroke-width .15s;
+  }
+  .trajline:hover { stroke-width: 3.6; opacity: 1; }
+  .trajline.dimmed { opacity: 0.08; }
+  .bubble { stroke-width: 2.5; cursor: default; transition: opacity .15s; }
+  .bubble:hover { stroke-width: 4; }
+  .bubble.dimmed { opacity: 0.08; }
+
+  .empty { padding: 70px 20px; text-align: center; color: var(--ink-soft); font-size: 14px; }
+
+  /* ---- player picker ---- */
+  .pickercard {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .pickercard h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ink-soft); margin: 0 0 10px; font-weight: 700;
+  }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; min-height: 30px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 6px 4px 10px; font-size: 12.5px; font-weight: 600;
+  }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .pill button {
+    border: none; background: transparent; color: var(--ink-soft); cursor: pointer;
+    width: 17px; height: 17px; border-radius: 50%; font-size: 13px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pill button:hover { background: var(--line); color: var(--ink); }
+  .pills-empty { color: var(--ink-soft); font-size: 12.5px; padding: 6px 2px; }
+
+  .pickerrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  #playerSearch {
+    flex: 1 1 200px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+    background: var(--panel-2); color: var(--ink); font-size: 13px; font-family: var(--sans);
+  }
+  #playerSearch:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .qf {
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-soft);
+    padding: 8px 12px; border-radius: 9px; font-size: 12px; font-weight: 600;
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .qf:hover { border-color: var(--accent); color: var(--ink); }
+
+  .suggestions {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; max-height: 190px; overflow-y: auto;
+    padding-top: 10px; border-top: 1px solid var(--line);
+  }
+  .sugg {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
+    padding: 5px 10px 5px 8px; font-size: 12px; cursor: pointer; user-select: none;
+  }
+  .sugg:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .sugg .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .sugg .ct { color: var(--ink-soft); font-family: var(--mono); font-size: 10px; }
+  .sugg-note { width: 100%; color: var(--ink-soft); font-size: 11px; padding: 2px 2px 0; }
+
+  /* ---- tabs ---- */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 4px 0 16px; overflow-x: auto; scrollbar-width: none; }
+  .tabs button {
+    border: none; background: transparent; color: var(--ink-soft); font: 600 13.5px var(--sans);
+    padding: 10px 14px 11px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+  }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .tabs button:focus-visible, .seg button:focus-visible, .qf:focus-visible, th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tabs .tabtag { font: 500 10.5px var(--mono); color: var(--ink-soft); margin-left: 6px; }
+  .loading { padding: 70px 20px; text-align: center; color: var(--ink-soft); font-size: 13.5px; }
+  .note { font-size: 12px; color: var(--ink-soft); line-height: 1.55; }
+  .note strong { color: var(--ink); }
+  .asof { font: 500 11.5px var(--mono); color: var(--ink-soft); }
+  details.howto { margin-top: 16px; font-size: 12px; color: var(--ink-soft); }
+  details.howto summary { cursor: pointer; font-weight: 600; color: var(--ink); font-size: 12.5px; padding: 4px 0; }
+
+  /* ---- rankings ---- */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow); margin-bottom: 16px; }
+  .rk-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .rk-search { flex: 0 1 220px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); color: var(--ink); font: 13px var(--sans); min-width: 0; }
+  .tablewrap { overflow-x: auto; margin: 0 -4px; }
+  table.rk { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  table.rk th { text-align: right; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); font-weight: 700; padding: 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.rk th button { all: unset; cursor: pointer; display: block; padding: 8px 8px; }
+  table.rk th button:hover { color: var(--ink); }
+  table.rk th.sorted button { color: var(--accent); }
+  table.rk th.l, table.rk td.l { text-align: left; }
+  table.rk td { padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.rk tr:hover td { background: var(--panel-2); }
+  table.rk td.num { font-family: var(--mono); font-size: 12px; }
+  table.rk td.pos { color: var(--ink-soft); font-family: var(--mono); font-size: 11.5px; width: 34px; }
+  table.rk .pname { font-weight: 600; }
+  table.rk .ioc { font: 500 10px var(--mono); color: var(--ink-soft); margin-left: 6px; }
+  .winbar { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .winbar i { display: block; height: 6px; border-radius: 3px; background: var(--accent); opacity: .75; }
+  .winbar .track { width: 70px; height: 6px; border-radius: 3px; background: var(--panel-2); display: flex; justify-content: flex-start; }
+  .pos-chip { font: 600 10.5px var(--mono); padding: 1px 6px; border-radius: 999px; }
+  .up { color: #2f7a4d; } .down { color: #b0412b; }
+  .showmore { margin-top: 12px; }
+
+  /* ---- match odds ---- */
+  .odds-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .pf-searchbox { position: relative; flex: 0 1 260px; }
+  .pf-searchbox .rk-search { width: 100%; box-sizing: border-box; }
+  .pf-sugg { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .pf-sugg button { all: unset; box-sizing: border-box; display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 8px 11px; font-size: 13px; cursor: pointer; }
+  .pf-sugg button:hover, .pf-sugg button.on { background: var(--panel-2); }
+  .pf-sugg .ct { font: 11px var(--mono); color: var(--ink-soft); }
+  .pf-h { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; font-weight: 700; color: var(--ink-soft); margin-bottom: 8px; }
+  .pf-name { font: 600 28px/1.15 var(--serif); margin: 6px 0 2px; }
+  .pf-sub { color: var(--ink-soft); font-size: 13px; margin-bottom: 12px; }
+  .pf-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+  .pf-tile { background: var(--panel-2); border-radius: 10px; padding: 9px 11px; }
+  .pf-tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); font-weight: 700; }
+  .pf-tile .v { font: 600 17px var(--mono); margin-top: 3px; }
+  .pf-tile .s { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
+  .pf-select { padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); color: var(--ink); font: 13px var(--sans); }
+  table.rk td.up { color: var(--wm); }
+  table.rk td.dn { color: var(--accent); }
+  table.rk .opp { cursor: pointer; border-bottom: 1px dotted var(--ink-soft); }
+  table.rk .opp:hover { color: var(--accent); }
+  table.rk .res { font-weight: 700; }
+  table.rk .pname.link { cursor: pointer; }
+  table.rk .pname.link:hover { color: var(--accent); }
+  .pf-empty { color: var(--ink-soft); font-size: 14px; padding: 10px 0 4px; }
+  @media (max-width: 820px) { .odds-grid { grid-template-columns: minmax(0, 1fr); } }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .field > label, .field > .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); font-weight: 700; }
+  .field input[type=text], .field select {
+    padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); color: var(--ink);
+    font: 600 14px var(--sans); width: 100%; min-width: 0;
+  }
+  .field input[type=text]:focus, .field select:focus, .rk-search:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: end; }
+  .swap { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-soft); border-radius: 9px; height: 38px; width: 38px; cursor: pointer; font-size: 16px; margin-bottom: 14px; }
+  .swap:hover { color: var(--ink); border-color: var(--accent); }
+  .speedrow { display: flex; align-items: center; gap: 10px; }
+  .speedrow input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+  .speedval { font: 600 12px var(--mono); min-width: 92px; text-align: right; color: var(--ink); }
+  .speedscale { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-soft); margin-top: -2px; }
+  .ctrlrow { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .result-names { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 8px; }
+  .result-names .nm { font-family: var(--serif); font-weight: 600; font-size: clamp(17px, 2.4vw, 22px); line-height: 1.15; }
+  .result-names .nm.r { text-align: right; }
+  .bigpct { display: flex; justify-content: space-between; font-family: var(--serif); font-weight: 600; font-size: clamp(34px, 6vw, 52px); line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .bigpct .b { color: var(--ink-soft); }
+  .splitbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 12px 0 6px; background: var(--panel-2); }
+  .splitbar .sa { background: var(--accent); transition: width .25s; }
+  .splitbar .sb { background: var(--ink-soft); opacity: .35; flex: 1; }
+  .fair { display: flex; justify-content: space-between; font: 500 11.5px var(--mono); color: var(--ink-soft); }
+  .subhead { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); font-weight: 700; margin: 20px 0 8px; }
+  table.brk { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  table.brk td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  table.brk td.v { text-align: right; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+  table.brk td.d { color: var(--ink-soft); font-size: 11.5px; }
+  table.brk tr.tot td { font-weight: 700; border-bottom: none; }
+  .effbar { display: inline-block; vertical-align: middle; position: relative; width: 90px; height: 8px; background: var(--panel-2); border-radius: 4px; }
+  .effbar i { position: absolute; top: 0; height: 8px; border-radius: 4px; background: var(--accent); }
+  .effbar i.neg { background: var(--ink-soft); }
+  .effbar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--ink-soft); opacity: .5; }
+  .setscores { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 6px; }
+  .ss { background: var(--panel-2); border-radius: 9px; padding: 8px 6px; text-align: center; }
+  .ss .sc { font: 600 13px var(--mono); }
+  .ss .pc { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .ss.a .sc { color: var(--accent); }
+
+  footer { margin-top: 16px; font-size: 12px; color: var(--ink-soft); line-height: 1.6; max-width: 90ch; }
+  footer strong { color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <div class="titlebar">
+    <div>
+      <h1>Champion Rating Trajectories</h1>
+      <div class="sub" id="subtitle">Loading players&hellip;</div>
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" id="tab-men" data-tab="men" aria-selected="true">Men &middot; history</button>
+    <button role="tab" id="tab-women" data-tab="women" aria-selected="false">Women &middot; history</button>
+    <button role="tab" id="tab-rankings" data-tab="rankings" aria-selected="false">Current ratings</button>
+    <button role="tab" id="tab-odds" data-tab="odds" aria-selected="false">Match odds</button>
+    <button role="tab" id="tab-profile" data-tab="profile" aria-selected="false">Player profile</button>
+  </nav>
+
+  <section id="panelChart">
+
+  <div class="chartcard">
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <div class="seg" id="xModeChips">
+          <button data-mode="calendar" aria-pressed="true">Calendar year</button>
+          <button data-mode="age" aria-pressed="false">Age</button>
+          <button data-mode="tour" aria-pressed="false">Years on tour</button>
+        </div>
+        <span class="qf" id="resetZoom" hidden>&#8634; Reset zoom</span>
+      </div>
+      <div class="toolbar-group">
+        <div class="seg" id="refModeChips">
+          <button data-ref="fixed" aria-pressed="true">vs Top 10</button>
+          <button data-ref="top20" aria-pressed="false">vs Top 20</button>
+          <button data-ref="top50" aria-pressed="false">vs Top 50</button>
+          <button data-ref="str" aria-pressed="false" title="Strength: average win chance against the players ranked 5th to 15th at that moment">vs No. 5–15</button>
+        </div>
+      </div>
+      <div class="toolbar-group">
+        <div class="seg" id="surfModeChips">
+          <button data-surf="" aria-pressed="true">General</button>
+          <button data-surf="Hard" aria-pressed="false">Hard</button>
+          <button data-surf="Clay" aria-pressed="false">Clay</button>
+          <button data-surf="Grass" aria-pressed="false">Grass</button>
+        </div>
+        <div class="seg" id="srModeChips" style="margin-left:6px">
+          <button data-surf="Serve" aria-pressed="false" title="Serve rating only: the player's return is set to the reference opponent's level">Serve</button>
+          <button data-surf="Return" aria-pressed="false" title="Return rating only: the player's serve is set to the reference opponent's level">Return</button>
+        </div>
+      </div>
+      <div class="toolbar-group">
+        <label class="switchrow"><input type="checkbox" id="toggleWins" checked><span class="switch"></span>Slam wins</label>
+        <label class="switchrow" id="rowSurfAdj"><input type="checkbox" id="toggleSurfAdj"><span class="switch"></span>Surface-adjusted</label>
+        <label class="switchrow" id="rowStable"><input type="checkbox" id="toggleStable"><span class="switch"></span>Stable general rating</label>
+        <label class="switchrow" id="rowClosing"><input type="checkbox" id="toggleClosing" checked><span class="switch"></span>Closing adjustment</label>
+        <label class="switchrow" id="rowClutch"><input type="checkbox" id="toggleClutch" checked><span class="switch"></span>Clutch adjustment</label>
+        <label class="switchrow" id="rowRaw"><input type="checkbox" id="toggleRaw"><span class="switch"></span>Raw ratings</label>
+      </div>
+    </div>
+    <div class="toolbar" style="margin-top:2px;">
+      <div class="legend-slams" id="legendWins">
+        <span><i class="ring" style="border-color:var(--ao)"></i>Australian Open</span>
+        <span><i class="ring" style="border-color:var(--rg)"></i>Roland Garros</span>
+        <span><i class="ring" style="border-color:var(--wm)"></i>Wimbledon</span>
+        <span><i class="ring" style="border-color:var(--us)"></i>US Open</span>
+      </div>
+    </div>
+    <div id="chartHost"><div class="loading">Loading rating histories&hellip;</div></div>
+    <div class="empty" id="emptyMsg" hidden>Pick at least one player below to plot.</div>
+  </div>
+
+  <div class="pickercard">
+    <h2>Players</h2>
+    <div class="pills" id="pills"></div>
+    <div class="pickerrow">
+      <input type="text" id="playerSearch" placeholder="Add a player by name…" autocomplete="off" />
+      <span class="qf" id="qfChamps">+ Champions (2+ titles)</span>
+      <span class="qf" id="qfDefault">Reset</span>
+      <span class="qf" id="qfNone">Clear</span>
+    </div>
+    <div class="suggestions" id="suggestions"></div>
+  </div>
+
+  <div class="note" id="wtaChartNote" hidden style="margin-top:12px;">
+    <strong>Women's data: the WTA main tour from 1990 to September 2026</strong> (TennisMyLife files). The chart starts in 1992, after two years of warm-up so the first ratings aren't cold starts; title and finals counts cover Slams from 1990 on. Same rating recipe as the men's, including learning from points won wherever serve stats exist (most matches from the mid-2000s on).
+  </div>
+
+  <details class="howto"><summary>How the chart works</summary>
+  <footer>
+    <strong>New in October 2026: every player now has two ratings, one for serve and one for return</strong> (each with its own hard, clay and grass version: the general rating plus a surface gap, where the gaps balance out at hard 60% / clay 30% / grass 10%, so the general line always sits between a player's best and worst surface). <strong>The line shows their average</strong>, which is what decides most matches; the <strong>Serve</strong> and <strong>Return</strong> buttons show each half on its own, and <strong>Raw ratings</strong> plots the numbers themselves instead of win-odds (0 = an average tour player; the general rating is (serve + return) / 2; the same numbers appear in the Current ratings tab). <strong>Closing</strong> (the set-level finishing rating) and <strong>clutch</strong> (the deciding-set rating, with the weight the match odds use) are on by default, so the line shows the full player as the odds see them. The model predicts a match the way it is played: each player's chance of winning a point on serve comes from their serve rating against the opponent's return rating, then holds, sets (tiebreaks point by point) and the match follow. It also learns faster from a player's first matches and no longer lets ratings fade between matches. Held-out logloss improved by 0.0017 (men) and 0.0025 (women), the largest single step in a long while; most of it comes from the point&rarr;hold&rarr;set prediction rather than from the split itself. Ratings sit on a wider scale than before, so compare lines with each other, not with old screenshots. <strong>vs No. 5&ndash;15</strong> shows Strength, as in the Current ratings tab: the average win chance against the players ranked 5th to 15th at that moment in history. The <strong>Serve</strong> and <strong>Return</strong> buttons show one half at a time: the win chance against the reference opponent if the player's other half were exactly at the reference level &mdash; a big server's Serve line sits far above their Return line. The history below describes how the rating evolved before this change. The line is each player's rating converted into expected win-probability (log-odds) against a reference opponent &mdash; whoever was ranked 10th among active tour players (30+ matches, played in the last year) <em>at that exact point in history</em>, not a fixed level pinned to the present &mdash; so 1978's line is measured against 1978's top 10, not today's. It still runs through the same game&rarr;set&rarr;match&rarr;calibration chain either way, so it stays smooth across the calendar rather than zig-zagging with the tournament schedule, and reads on a scale where 0 means roughly a coin flip against that era's 10th-best active player. Ringed bubbles mark Slam title wins. <strong>Surface-adjusted</strong> (off by default) swaps the line for a fixed blend of general skill and that player's independently-tracked surface-specific rating on whichever surface that snapshot's match was actually played on (once they have enough matches on it). Two earlier ways of splitting credit between general and surface skill were tried and set aside: a version that decided, match by match and in real time, how much of each result counted as surface skill versus general skill smoothed the line nicely but cost real predictive accuracy, because that split has to guess &mdash; before it's known whether a hot streak will last &mdash; how much of it is general improvement rather than a surface-specific spike; and a version that scored general and surface skill fully independently (each against its own separate, partial prediction) was more accurate but sawtoothed visibly with the clay season for surface-lopsided players. The version live now scores each match <em>once</em>, against the same combined blend the model actually predicts with, and then updates both general and surface skill by the <em>full</em> resulting surprise &mdash; nothing is ever split or reallocated between them. That combined prediction is simply a better signal than either piece alone, so both general and surface skill get cleaner updates: on held-out testing this improved both logloss and Brier score (the two measures used to validate everything else on this page) over the independent version, and cut a specialist's within-year swing by a meaningful fraction on its own, as a side effect of the cleaner signal rather than a deliberate smoothing trade. You may still see a player's general-rating line rise during a strong surface season and ease back afterward &mdash; that reactivity is real predictive signal, just less noisy than before. Players under 24 also get a faster-reacting version of this same update (1.4&times; the normal step size) &mdash; testing found the model otherwise lags genuine, rapid early-career improvement, since a fixed step size has to compromise between tracking a 21-year-old's real jump in form and not over-reacting to a 31-year-old's noisy week; the same idea tried in the other direction, reacting faster to older players on the theory that decline should be easier to catch quickly, was tested just as rigorously and consistently made both accuracy and calibration worse, so it was left out. New players now start slightly below tour-average rather than exactly at it (a little lower if their first match is at challenger level) &mdash; testing found the model had been systematically treating newcomers as average players when most are well below that, and fixing the starting point was worth more held-out accuracy than any other single change. Separately, the live win-odds (not this chart, since they describe the match rather than the player) now also correct for rest and match rhythm, home crowd, qualifier/wildcard entry, a recent retirement or withdrawal, and height on fast courts; together with the new starting point that took held-out accuracy from 64.3% to 65.2%. Ratings now also move about 20% less per match than before: once newcomers start nearer their real level, a smaller step tracks true form better (checked on held-out matches). Updating after every set instead of after every match was tested too and made no difference, since the per-set surprises add up to the same thing by the next match. Since 1991, where the match stats exist, ratings now learn from <strong>points won</strong> rather than games won &mdash; a much finer-grained result, so a tight 7-6 7-6 and a comfortable 6-3 6-3 are told apart properly. New players with an ATP ranking start at a level set by that ranking rather than one flat starting point, and ratings drift with age between matches (young players rising a little, players past 30 easing down), so a layoff no longer freezes a 21-year-old or a 34-year-old in place. Together these took held-out accuracy to 65.5%. General skill (and surface rating, and closing) does decay gradually during long layoffs (half-life ~3.8 years, past a 30-day grace period), so a retired or injured player doesn't sit frozen at their career-peak rating forever. <strong>Stable general rating</strong> (off by default) shows a second, independent line purely for display: a running average of that same general rating over time. Because it never has to decide which bucket a match's surprise belongs to &mdash; it just smooths the one number the model already settled on &mdash; turning it on costs nothing, since (like surface-adjusted) it never feeds back into the model that computes anyone's actual win-odds, closing, or head-to-head adjustment. It's mutually exclusive with surface-adjusted. <strong>Closing adjustment</strong> runs each player's tight-set "clutch" correction through the same game&rarr;set&rarr;match conversion the live model uses, rather than adding it on directly — closing is a set-level effect and general skill a game-level one, so naive addition isn't valid. <strong>vs Top 10/20/50</strong> switches which rank the line (and the win-odds) are measured against — a tougher or easier bar depending on whether it's the 10th-, 20th-, or 50th-best active player of the moment — and now combines freely with every other toggle on this page: Surface-adjusted, Stable, the surface picker, and Closing all work against any of the three references, with the browser running the same calibration chain live instead of everything being precomputed against one fixed reference. The <strong>General / Hard / Clay / Grass</strong> picker is a different view again: instead of blending general skill into the surface a match happened to be played on, it shows the same blend pinned to ONE explicit surface, continuously, regardless of what surface a player is actually playing at that moment &mdash; useful for seeing how a clay specialist's clay game and hard-court game have each moved on their own terms, including surfaces they rarely play. (An earlier version of this toggle showed pure, unblended surface skill with no general skill mixed in at all — it looked misleadingly negative for even the greatest players on their best surface, because that pure number only accumulates from matches actually played on that surface, a small fraction of any career, while general skill accumulates from every match; comparing an under-sampled number to a full-career reference produced a large, meaningless gap that had nothing to do with real surface ability. Blending general skill back in, at the same weight used everywhere else, fixes it.) <strong>Surface-adjusted</strong>, <strong>Stable general rating</strong>, and the surface picker remain mutually exclusive with each other (only one line at a time), but that's now a display choice, not a limitation of what's computable. Switch the x-axis to <strong>Age</strong> or <strong>Years on tour</strong> to line up different eras on equal footing. Hover a line, bubble, or pill to isolate it. <strong>Drag across the chart</strong> to zoom into a period (both axes rescale to what's in view, and each line switches from monthly to weekly snapshots once that player's monthly points would otherwise be sparse dots rather than a curve); use "Reset zoom" to zoom back out. Every player with at least 40 tour-level matches is searchable below, not just Grand Slam finalists &mdash; the weekly zoom detail is kept for the ~300 most active players to keep the page a reasonable size, everyone else still gets the full monthly trajectory and title history.
+  </footer>
+  </details>
+  </section>
+
+  <section id="panelRankings" hidden>
+    <div class="card">
+      <div class="rk-top">
+        <div class="toolbar-group">
+          <div class="seg" id="rkTour">
+            <button data-tour="atp" aria-pressed="true">Men</button>
+            <button data-tour="wta" aria-pressed="false">Women</button>
+          </div>
+          <div class="seg" id="rkSurf">
+            <button data-surf="" aria-pressed="false">General</button>
+            <button data-surf="Hard" aria-pressed="true">Hard</button>
+            <button data-surf="Clay" aria-pressed="false">Clay</button>
+            <button data-surf="Grass" aria-pressed="false">Grass</button>
+          </div>
+        </div>
+        <input type="text" class="rk-search" id="rkSearch" placeholder="Find a player&hellip;" autocomplete="off" />
+      </div>
+      <div class="asof" id="rkAsOf"></div>
+      <div class="tablewrap"><table class="rk" id="rkTable"></table></div>
+      <div class="showmore"><span class="qf" id="rkMore" role="button" tabindex="0">Show all</span></div>
+    </div>
+    <div class="note" id="rkNote"></div>
+  </section>
+
+  <section id="panelOdds" hidden>
+    <div class="odds-grid">
+      <div class="card">
+        <div class="field">
+          <span class="lbl">Tour</span>
+          <div class="seg" id="odTour">
+            <button data-tour="atp" aria-pressed="true">Men</button>
+            <button data-tour="wta" aria-pressed="false">Women</button>
+          </div>
+        </div>
+        <div class="pair">
+          <div class="field"><label for="odA">Player 1</label><input type="text" id="odA" list="odList" autocomplete="off" /></div>
+          <button class="swap" id="odSwap" title="Swap players" aria-label="Swap players">&#8646;</button>
+          <div class="field"><label for="odB">Player 2</label><input type="text" id="odB" list="odList" autocomplete="off" /></div>
+        </div>
+        <datalist id="odList"></datalist>
+        <div class="field">
+          <label for="odPreset">Tournament (optional &mdash; sets surface, court speed and format)</label>
+          <select id="odPreset"></select>
+        </div>
+        <div class="field">
+          <span class="lbl">Surface</span>
+          <div class="ctrlrow">
+            <div class="seg" id="odSurf">
+              <button data-surf="Hard" aria-pressed="true">Hard</button>
+              <button data-surf="Clay" aria-pressed="false">Clay</button>
+              <button data-surf="Grass" aria-pressed="false">Grass</button>
+            </div>
+            <label class="switchrow"><input type="checkbox" id="odIndoor"><span class="switch"></span>Indoor</label>
+          </div>
+        </div>
+        <div class="field">
+          <span class="lbl">Event &amp; format</span>
+          <div class="ctrlrow">
+            <div class="seg" id="odLevel">
+              <button data-lvl="A" aria-pressed="true">Tour event</button>
+              <button data-lvl="M" aria-pressed="false" id="odLvlM">Masters 1000</button>
+              <button data-lvl="G" aria-pressed="false">Grand Slam</button>
+            </div>
+            <div class="seg" id="odBo">
+              <button data-bo="3" aria-pressed="true">Best of 3</button>
+              <button data-bo="5" aria-pressed="false">Best of 5</button>
+            </div>
+          </div>
+        </div>
+        <div class="field" id="odSpeedField">
+          <label for="odSpeed">Court speed</label>
+          <div class="speedrow"><input type="range" id="odSpeed" min="-0.6" max="0.35" step="0.01" value="0" /><span class="speedval" id="odSpeedVal">standard</span></div>
+          <div class="speedscale"><span>slower</span><span id="odSpeedStd">standard for the surface</span><span>faster</span></div>
+        </div>
+        <div class="note" id="odSpeedNote"></div>
+      </div>
+
+      <div class="card" id="odResult">
+        <div class="result-names"><span class="nm" id="odNameA"></span><span class="nm r" id="odNameB"></span></div>
+        <div class="bigpct"><span id="odPA"></span><span class="b" id="odPB"></span></div>
+        <div class="splitbar"><span class="sa" id="odBar"></span><span class="sb"></span></div>
+        <div class="fair"><span id="odFairA"></span><span id="odFairB"></span></div>
+        <div class="subhead">Where the edge comes from</div>
+        <table class="brk" id="odBreak"></table>
+        <div class="subhead">Likely scorelines</div>
+        <div class="setscores" id="odSets"></div>
+      </div>
+    </div>
+    <div class="note" id="odNote"></div>
+  </section>
+  <section id="panelProfile" hidden>
+    <div class="card">
+      <div class="rk-top">
+        <div class="toolbar-group">
+          <div class="seg" id="pfTour">
+            <button data-tour="atp" aria-pressed="true">Men</button>
+            <button data-tour="wta" aria-pressed="false">Women</button>
+          </div>
+        </div>
+        <div class="pf-searchbox">
+          <input type="text" class="rk-search" id="pfSearch" placeholder="Find any player&hellip;" autocomplete="off" />
+          <div class="pf-sugg" id="pfSugg" hidden></div>
+        </div>
+      </div>
+      <div id="pfHead"></div>
+    </div>
+    <div class="card" id="pfSeasonsCard" hidden>
+      <div class="pf-h">Season by season</div>
+      <div class="tablewrap"><table class="rk" id="pfSeasons"></table></div>
+    </div>
+    <div class="card" id="pfMatchesCard" hidden>
+      <div class="rk-top" style="margin-bottom:8px">
+        <div class="pf-h" style="margin:0">Every match</div>
+        <div class="toolbar-group">
+          <select id="pfYear" class="pf-select" aria-label="Season"></select>
+          <div class="seg" id="pfSurf">
+            <button data-surf="" aria-pressed="true">All</button>
+            <button data-surf="Hard" aria-pressed="false">Hard</button>
+            <button data-surf="Clay" aria-pressed="false">Clay</button>
+            <button data-surf="Grass" aria-pressed="false">Grass</button>
+          </div>
+        </div>
+      </div>
+      <div class="tablewrap"><table class="rk" id="pfMatches"></table></div>
+      <div class="showmore"><span class="qf" id="pfMore" role="button" tabindex="0">Show all</span></div>
+    </div>
+    <div class="note" id="pfNote">
+      Every match of the player, newest first. <strong>Win chance</strong> is the full model's pre-match probability (ratings, closing, head-to-head and the corrections). The <strong>&Delta;</strong> columns are what that match did to the player's ratings: overall level (the average of serve and return), serve, return, and the level on that match's surface (general plus the surface gap). Ratings move on points won on serve and on return compared with what the model expected against that opponent, so a win can lower a rating (winning while being outplayed on points) and a loss can raise it. Before 1991, and wherever serve stats are missing, ratings learn from games won instead. In a retirement with match stats, only the player who did not retire learns from the points played (the injured player's points mostly show the injury); walkovers and defaults don't change the ratings. Win chance is shown for completed matches only. Ratings are in the model's units: 0 is an average tour player. Click an opponent to open their profile. <strong>Predicted titles</strong> add up the player's title chance on the eve of every event they entered: each entrant's ratings frozen before the event, then 1,200 (Slams 3,000) seeded random draws played out with the model (ratings, holds and sets, closing; best of five where played; and the observed retirement/walkover risk per match, in which case the result is close to a coin flip). Counted: tour-level knockout events (men 1968 on, women 1990 on); not counted: Davis/Fed Cup, round-robin season finals and men's challengers. Won more than predicted = beat the odds.
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var DATA = null;   // set by setTour(): the men's or women's trajectory file
+  // players[i].pts / ptsFine: [dateISO, phi_gen, bphi_match, b_hard, b_clay, b_grass, sphi, c, age, tour_years]
+  // ALL RAW, uncalibrated internal model state -- no reference opponent baked
+  // in, no game->set->match->calibration chain applied yet. That chain runs
+  // HERE in the browser (effectiveRating(), a JS port of the Python
+  // effective_rating()) against whichever of DATA.thr_month/thr_week
+  // (top-10/20/50 active-player-at-that-moment thresholds, shared across all
+  // players, indexed by calendar period) the selected reference calls for --
+  // so any line (general / surface-adjusted / stable / Hard / Clay / Grass)
+  // works against any reference (top-10/20/50), with or without closing.
+  //   phi_gen: raw general skill.
+  //   bphi_match: the 0.6/0.4 general/surface blend using THIS SNAPSHOT'S OWN
+  //     match surface -- the reactive "surface-adjusted" line.
+  //   b_hard/b_clay/b_grass: the SAME blend formula, but pinned to one
+  //     EXPLICIT surface regardless of what surface this match was actually
+  //     on -- "if this player always played on Hard/Clay/Grass, blending in
+  //     their own surface-specific form on it". An earlier version of this
+  //     toggle showed the UNBLENDED phi_surf directly, which looked
+  //     misleadingly negative even for the greatest players on their best
+  //     surface: phi_surf only accumulates a term on matches actually played
+  //     on that surface (a fraction of a career), while phi_gen accumulates
+  //     one on every match, so on a barely-decaying filter (persistence
+  //     0.9995, essentially a running sum) phi_surf is naturally a much
+  //     smaller-magnitude number than phi_gen by sample count alone --
+  //     nothing to do with surface skill. Comparing that undersized number
+  //     against a reference built on phi_gen's full-history scale produced a
+  //     big negative gap for nearly everyone. Blending phi_gen back in (same
+  //     weight as everywhere else) fixes it by diluting the undersized term
+  //     with the correctly-scaled one.
+  //   sphi: causal EMA of phi_gen (display-only, never feeds back into any
+  //     prediction).
+  //   c: raw closing ("clutch") state, same one the live model uses.
+  var PT = { date: 0, phiGen: 1, bphiMatch: 2, bHard: 3, bClay: 4, bGrass: 5, sphi: 6, c: 7, age: 8, tourYears: 9, sv: 10, rt: 11, cl: 12 };
+  var CAL_I = 0, CAL_S = 1;
+
+  function sigmoidJS(x) {
+    if (x >= 0) { var z = Math.exp(-x); return 1 / (1 + z); }
+    var z2 = Math.exp(x); return z2 / (1 + z2);
+  }
+  function logitJS(p) { return Math.log(p / (1 - p)); }
+  function clampJS(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+  function combJS(n, k) {
+    if (k < 0 || k > n) return 0;
+    var r = 1;
+    for (var i = 0; i < k; i++) r = r * (n - i) / (i + 1);
+    return r;
+  }
+  function matchFromSetProb(q, bestOf) {
+    var need = bestOf === 3 ? 2 : 3;
+    var total = 0;
+    for (var lost = 0; lost < need; lost++) {
+      total += combJS(need + lost - 1, lost) * Math.pow(q, need) * Math.pow(1 - q, lost);
+    }
+    return total;
+  }
+  // Recursive game-score -> set-win-probability, memoized per call (same
+  // recursion as Python's set_prob_from_game_rate, target=6, tiebreak at 6-6).
+  function setProbFromGameRate(q) {
+    var memo = {};
+    function rec(a, b) {
+      var key = a + "_" + b;
+      if (memo[key] !== undefined) return memo[key];
+      var v;
+      if (a >= 6 && a - b >= 2) v = 1.0;
+      else if (b >= 6 && b - a >= 2) v = 0.0;
+      else if (a === 6 && b === 6) v = q;
+      else v = q * rec(a + 1, b) + (1 - q) * rec(a, b + 1);
+      memo[key] = v;
+      return v;
+    }
+    return rec(0, 0);
+  }
+  // JS port of effective_rating(phi, c, ref, bo=3): logit of expected win
+  // prob for a player with general rating `phi` and closing state `c`,
+  // against a reference opponent at phi=`ref`, run through the real
+  // game->set->match->calibration chain.
+  // Oct 2026 serve/return model: the rating is the average of a serve and a return rating, and the model predicts
+  // through service points -> holds -> sets (point-level tiebreak) -> match, with the point edge shrunk by hm.
+  // For the chart a player is measured against a reference opponent at the threshold level on both serve and return.
+  function holdJS(p) { var q = 1 - p; return Math.pow(p, 4) * (1 + 4 * q + 10 * q * q) + 20 * Math.pow(p, 3) * Math.pow(q, 3) * p * p / (1 - 2 * p * q); }
+  var srCacheJS = {};
+  function srSetJS(pa, pb) {
+    var key = pa + "_" + pb; if (srCacheJS[key] !== undefined) return srCacheJS[key];
+    var ha = holdJS(pa), hb = holdJS(pb), mt = {}, mg = {};
+    function tb(x, y) {
+      if (x >= 7 && x - y >= 2) return 1; if (y >= 7 && y - x >= 2) return 0;
+      if (x === y && x >= 6) { var w2 = pa * (1 - pb), l2 = (1 - pa) * pb; return w2 + l2 > 0 ? w2 / (w2 + l2) : 0.5; }
+      var k = x * 100 + y; if (mt[k] !== undefined) return mt[k];
+      var s = x + y, aServes = (s % 4 === 0) || (s % 4 === 3), p = aServes ? pa : 1 - pb;
+      return (mt[k] = p * tb(x + 1, y) + (1 - p) * tb(x, y + 1));
+    }
+    function g(x, y) {
+      if (x >= 6 && x - y >= 2) return 1; if (y >= 6 && y - x >= 2) return 0;
+      if (x === 7 || y === 7) return x > y ? 1 : 0;
+      if (x === 6 && y === 6) return tb(0, 0);
+      var k = x * 100 + y; if (mg[k] !== undefined) return mg[k];
+      var p = (x + y) % 2 === 0 ? ha : 1 - hb;
+      return (mg[k] = p * g(x + 1, y) + (1 - p) * g(x, y + 1));
+    }
+    return (srCacheJS[key] = g(0, 0));
+  }
+  var CUR_MU = null, CUR_SR = null;
+  function effectiveRating(phi, c, ref, bo) {
+    bo = bo || 3;
+    var qSetRaw;
+    if (DATA && DATA.cal.hm) {
+      var mu = CUR_MU != null ? CUR_MU : DATA.cal.mu.Hard, k = DATA.cal.hm / DATA.cal.ptm, r3 = function (x) { return Math.round(x * 1000) / 1000; };
+      // Serve view: the player's serve vs a reference return, with the player's return AT the reference level (and
+      // the reverse for the Return view) -- so the line isolates one half of the player's game.
+      var ds = CUR_SR === "return" ? 0 : phi - ref, dr = CUR_SR === "serve" ? 0 : phi - ref;
+      var ha = clampJS(sigmoidJS(mu + k * ds), 0.02, 0.98), hb = clampJS(sigmoidJS(mu - k * dr), 0.02, 0.98);
+      qSetRaw = clampJS(0.5 * (srSetJS(r3(ha), r3(hb)) + 1 - srSetJS(r3(hb), r3(ha))), 1e-6, 1 - 1e-6);
+    } else {
+      var qGen = clampJS(sigmoidJS(phi - ref), 1e-9, 1 - 1e-9);
+      qSetRaw = setProbFromGameRate(Math.round(qGen * 10000) / 10000);
+    }
+    var qSetAdj = clampJS(sigmoidJS(logitJS(qSetRaw) + c), 1e-6, 1 - 1e-6);
+    var qMatch = clampJS(matchFromSetProb(qSetAdj, bo), 1e-6, 1 - 1e-6);
+    return CAL_I + CAL_S * logitJS(qMatch);
+  }
+  // ISO-8601 week key ("YYYY-Www"), matching Python's date.isocalendar() --
+  // needed to look up DATA.thr_week the same way the model built it.
+  function isoWeekKey(ms) {
+    var d = new Date(ms);
+    var date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    var dayNum = (date.getUTCDay() + 6) % 7;
+    date.setUTCDate(date.getUTCDate() - dayNum + 3);
+    var firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+    var firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
+    firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
+    var weekNum = 1 + Math.round((date - firstThursday) / (7 * 86400000));
+    var wk = weekNum < 10 ? "0" + weekNum : "" + weekNum;
+    return date.getUTCFullYear() + "-W" + wk;
+  }
+  var DEFAULT_THR = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  function thrFor(dateISO, usingFine) {
+    var table = usingFine ? DATA.thr_week : DATA.thr_month;
+    var key = usingFine ? isoWeekKey(parseDate(dateISO)) : dateISO.slice(0, 7);
+    return table[key] || DEFAULT_THR;
+  }
+  function refIdxFor(refMode_) { return refMode_ === "top20" ? 1 : refMode_ === "top50" ? 2 : 0; }
+
+  var players = [];
+  var winMarkers = [];
+
+  var SLAM_HEX = { "Australian Open": "#2c6ea5", "Roland Garros": "#b0552b", "Wimbledon": "#2f7a4d", "US Open": "#6e4396" };
+
+  var PALETTE = [
+    "#d1495b", "#2f6f9f", "#e0a458", "#6a4c93", "#3a9679",
+    "#c76b3f", "#4c6b8a", "#b85c8a", "#5a8a3c", "#a13d1f",
+    "#3f7d7a", "#9c5ba5", "#c9932e", "#4361a3", "#a35c2e",
+    "#2e8b6e", "#c94277", "#7a6b3a", "#4f7ca1", "#b0552b",
+    "#6e4396", "#3f8a6e", "#a86b3f", "#5f7a3a", "#8a3b5a",
+    "#2c6ea5", "#c46a1f", "#5a6d8a", "#9a4a4a", "#3a7a5f",
+    "#7c5a9e", "#b0812e"
+  ];
+  var byName = {};
+  var DEFAULTS = {
+    atp: ["Novak Djokovic", "Rafael Nadal", "Roger Federer", "Pete Sampras", "Bjorn Borg"],
+    wta: ["Serena Williams", "Steffi Graf", "Justine Henin", "Iga Swiatek", "Aryna Sabalenka"]
+  };
+  var DEFAULT_ON = DEFAULTS.atp;
+  var selected = new Set(DEFAULT_ON);
+  var tourState = {};   // remembers each tour's selection / zoom when switching back and forth
+  var curTour = null;
+  var showWins = true;
+  var showSurfAdj = false;
+  var showClosing = true, showClutch = true, showRaw = false;
+  var showStable = false;  // display-only smoothed general rating, see toggle label
+  var surfMode = "";  // "" (general) | "Hard" | "Clay" | "Grass" -- pure per-surface rating, mutually exclusive with showSurfAdj/showStable
+  var refMode = "fixed";  // "fixed" (= vs top 10) | "top20" | "top50"
+  var hoverName = null;
+  var xMode = "calendar";
+  var zoomRange = null;   // [tMin, tMax] in the current xMode's domain units, or null for full range
+  var zoomDrag = null;    // in-progress drag state, set on mousedown, read by the one-time document listeners below
+
+  var pillsHost = document.getElementById("pills");
+  var suggHost = document.getElementById("suggestions");
+  var search = document.getElementById("playerSearch");
+  var chartHost = document.getElementById("chartHost");
+  var emptyMsg = document.getElementById("emptyMsg");
+  var toggleWins = document.getElementById("toggleWins");
+  var toggleSurfAdj = document.getElementById("toggleSurfAdj");
+  var toggleStable = document.getElementById("toggleStable");
+  var toggleClosing = document.getElementById("toggleClosing");
+  var rowSurfAdj = document.getElementById("rowSurfAdj");
+  var rowStable = document.getElementById("rowStable");
+  var rowClosing = document.getElementById("rowClosing");
+  var refModeChips = Array.prototype.slice.call(document.querySelectorAll("#refModeChips button"));
+  var surfModeChips = Array.prototype.slice.call(document.querySelectorAll("#surfModeChips button, #srModeChips button"));
+  var legendWins = document.getElementById("legendWins");
+  var qfChamps = document.getElementById("qfChamps");
+  var qfDefault = document.getElementById("qfDefault");
+  var qfNone = document.getElementById("qfNone");
+  var xModeChips = Array.prototype.slice.call(document.querySelectorAll("#xModeChips button"));
+  var resetZoomBtn = document.getElementById("resetZoom");
+
+  function xOfPoint(pt) {
+    if (xMode === "age") return pt[PT.age];
+    if (xMode === "tour") return pt[PT.tourYears];
+    return parseDate(pt[PT.date]);
+  }
+  function xOfMarker(mk) {
+    if (xMode === "age") return mk.age;
+    if (xMode === "tour") return mk.tour_years;
+    return parseDate(mk.date);
+  }
+  function parseDate(s) { return new Date(s + "T00:00:00Z").getTime(); }
+
+  function renderPicker() {
+    // Rebuilding the pill DOM below destroys whatever element is currently
+    // under the cursor, so a mouseenter that set hoverName may never get a
+    // matching mouseleave (the element it would fire on no longer exists).
+    // Reset on every render so a stale hover can never "stick" across redraws.
+    hoverName = null;
+    // selected pills
+    if (!selected.size) {
+      pillsHost.innerHTML = '<div class="pills-empty">No players selected — add one below.</div>';
+    } else {
+      var order = players.filter(function (p) { return selected.has(p.name); });
+      pillsHost.innerHTML = order.map(function (p) {
+        return '<span class="pill" data-name="' + p.name + '">' +
+          '<span class="dot" style="background:' + p.color + '"></span>' + p.name +
+          '<button data-remove="' + p.name + '" title="Remove">×</button></span>';
+      }).join("");
+      Array.prototype.forEach.call(pillsHost.querySelectorAll("button[data-remove]"), function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          selected.delete(btn.dataset.remove);
+          renderPicker(); renderChart();
+        });
+      });
+      Array.prototype.forEach.call(pillsHost.querySelectorAll(".pill"), function (el) {
+        el.addEventListener("mouseenter", function () { hoverName = el.dataset.name; applyHoverDim(); });
+        el.addEventListener("mouseleave", function () { hoverName = null; applyHoverDim(); });
+      });
+    }
+
+    // suggestions (search results not yet selected)
+    var q = search.value.trim().toLowerCase();
+    var pool = players.filter(function (p) { return !selected.has(p.name); });
+    var found = q ? pool.filter(function (p) { return p.name.toLowerCase().indexOf(q) !== -1; }) : pool;
+    found.sort(function (a, b) { return (b.titles - a.titles) || (b.finals - a.finals) || (b.matches - a.matches); });
+    var shown = found.slice(0, q ? 5 : 18);
+    var note = q
+      ? (found.length > shown.length ? "top " + shown.length + " of " + found.length + " matches &mdash; keep typing to narrow" : found.length + " match" + (found.length === 1 ? "" : "es"))
+      : ("showing top " + shown.length + " of " + pool.length + " remaining &mdash; type to search all " + players.length);
+    suggHost.innerHTML = '<div class="sugg-note">' + note + '</div>' + shown.map(function (p) {
+      var badge = p.titles || p.finals ? (p.titles + '&middot;' + p.finals) : (p.matches + ' m');
+      return '<span class="sugg" data-name="' + p.name + '"><span class="dot" style="background:' + p.color + '"></span>' +
+        p.name + '<span class="ct">' + badge + '</span></span>';
+    }).join("");
+    Array.prototype.forEach.call(suggHost.querySelectorAll(".sugg"), function (el) {
+      el.addEventListener("click", function () {
+        selected.add(el.dataset.name);
+        search.value = "";
+        renderPicker(); renderChart();
+      });
+    });
+  }
+
+  function applyHoverDim() {
+    var svg = chartHost.querySelector("svg");
+    if (!svg) return;
+    var any = !!hoverName;
+    Array.prototype.forEach.call(svg.querySelectorAll("[data-player]"), function (el) {
+      el.classList.toggle("dimmed", any && el.dataset.player !== hoverName);
+    });
+  }
+
+  // Catmull-Rom -> cubic Bezier smoothing for a nicer, less mechanical line
+  function smoothPath(pts) {
+    if (pts.length < 3) {
+      return pts.map(function (p, i) { return (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
+    }
+    var d = "M" + pts[0][0].toFixed(1) + "," + pts[0][1].toFixed(1);
+    for (var i = 0; i < pts.length - 1; i++) {
+      var p0 = pts[i === 0 ? 0 : i - 1], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+      var c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      var c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += " C" + c1x.toFixed(1) + "," + c1y.toFixed(1) + " " + c2x.toFixed(1) + "," + c2y.toFixed(1) + " " + p2[0].toFixed(1) + "," + p2[1].toFixed(1);
+    }
+    return d;
+  }
+
+  function renderChart() {
+    // Same reasoning as renderPicker(): the SVG is rebuilt from scratch below,
+    // so any element a hover is currently "locked" to is about to disappear
+    // without ever firing mouseleave. Clear it so nothing stays dimmed forever.
+    hoverName = null;
+    var active = players.filter(function (p) { return selected.has(p.name); });
+    if (!active.length) {
+      chartHost.innerHTML = "";
+      emptyMsg.hidden = false;
+      return;
+    }
+    emptyMsg.hidden = true;
+
+    var W = 1120, H = 540, M = { top: 16, right: 24, bottom: 44, left: 86 };
+    var innerW = W - M.left - M.right, innerH = H - M.top - M.bottom;
+
+    var activeWins = showWins ? winMarkers.filter(function (mk) { return selected.has(mk.player); }) : [];
+    // Which raw field to read (general / surface-adjusted / stable /
+    // Hard / Clay / Grass) is independent of which reference to calibrate it
+    // against (top-10/20/50) and whether to fold in closing -- every
+    // combination is available now (see the PT / effectiveRating comment
+    // block above DATA for why). Points store raw phi; markers store the
+    // same raw fields by name.
+    var PHI_PT_IDX = { general: PT.phiGen, surfadj: PT.bphiMatch, stable: PT.sphi, Hard: PT.bHard, Clay: PT.bClay, Grass: PT.bGrass, Serve: PT.sv, Return: PT.rt };
+    var PHI_MK_KEY = { general: "phi_gen", surfadj: "bphi_match", stable: "sphi", Hard: "b_hard", Clay: "b_clay", Grass: "b_grass", Serve: "sv", Return: "rt" };
+    var viewKey = surfMode ? surfMode : showSurfAdj ? "surfadj" : showStable ? "stable" : "general";
+    var phiPtIdx = PHI_PT_IDX[viewKey];
+    var phiMkKey = PHI_MK_KEY[viewKey];
+    // v23: the explicit Hard/Clay/Grass views are measured against the top-10/20/50 of THAT
+    // surface (thresholds 3-11), not the general-rating field, which sits on a wider scale
+    var refN = refIdxFor(refMode) + (surfMode ? 3 * (1 + ["Hard", "Clay", "Grass"].indexOf(surfMode)) : 0);
+    CUR_MU = (DATA.cal.mu && surfMode && DATA.cal.mu[surfMode] != null) ? DATA.cal.mu[surfMode] : null;
+    CUR_SR = surfMode === "Serve" ? "serve" : surfMode === "Return" ? "return" : null;
+    // "vs No. 5-15" (Strength): average win PROBABILITY against each of the players ranked 5th..15th at that moment
+    // (thresholds 12..55: general, Hard, Clay, Grass blocks of 11), shown as its log-odds
+    var strBase = 12 + 11 * (surfMode && ["Hard", "Clay", "Grass"].indexOf(surfMode) >= 0 ? 1 + ["Hard", "Clay", "Grass"].indexOf(surfMode) : 0);
+    function yFrom(phi, c, cl, thr) {
+      var adj = showClutch && DATA.cal.bcl && cl != null ? DATA.cal.bcl * cl : 0, cc = showClosing ? c : 0;
+      if (refMode !== "str" || thr.length < 56) return effectiveRating(phi, cc, thr[refN]) + adj;
+      var s = 0;
+      for (var k = 0; k < 11; k++) s += sigmoidJS(effectiveRating(phi, cc, thr[strBase + k]) + adj);
+      return logitJS(clampJS(s / 11, 1e-6, 1 - 1e-6));
+    }
+    function yValueOfPt(pt, usingFine) {
+      var thr = thrFor(pt[PT.date], usingFine);
+      if (showRaw) return pt[phiPtIdx];
+      return yFrom(pt[phiPtIdx], pt[PT.c], pt[PT.cl], thr);
+    }
+    function yValueOfMk(mk) {
+      var thr = thrFor(mk.date, false);  // markers are always evaluated at monthly grain
+      if (showRaw) return mk[phiMkKey];
+      return yFrom(mk[phiMkKey], mk.c, mk.cl, thr);
+    }
+
+    var allT = [];
+    active.forEach(function (p) {
+      p.pts.forEach(function (pt) { var x = xOfPoint(pt); if (x != null) allT.push(x); });
+    });
+    activeWins.forEach(function (mk) { var x = xOfMarker(mk); if (x != null) allT.push(x); });
+
+    var dataTMin = Math.min.apply(null, allT), dataTMax = Math.max.apply(null, allT);
+    var tMin = dataTMin, tMax = dataTMax;
+    if (zoomRange) {
+      tMin = Math.max(dataTMin, Math.min(zoomRange[0], zoomRange[1]));
+      tMax = Math.min(dataTMax, Math.max(zoomRange[0], zoomRange[1]));
+      if (!(tMax - tMin > 0)) { tMin = dataTMin; tMax = dataTMax; zoomRange = null; }
+    }
+    resetZoomBtn.hidden = !zoomRange;
+
+    // Switch a player's line from monthly to weekly snapshots once their
+    // monthly points, at the CURRENT zoom, would be spaced out enough on
+    // screen to look like a handful of straight segments rather than a
+    // curve. This is decided per player (not by a fixed calendar-year
+    // cutoff) and re-evaluated on every zoom/pan, so it tracks actual pixel
+    // density in whichever x-axis mode (calendar/age/years-on-tour) is active.
+    var FINE_PX_PER_POINT = 22;
+    function pointsOf(p) {
+      if (!p.ptsFine || !p.ptsFine.length) return p.pts;
+      var nCoarse = 0;
+      for (var i = 0; i < p.pts.length; i++) {
+        var x = xOfPoint(p.pts[i]);
+        if (x != null && x >= tMin && x <= tMax) nCoarse++;
+      }
+      var pxPerPoint = nCoarse > 1 ? innerW / (nCoarse - 1) : innerW;
+      p._usingFine = pxPerPoint > FINE_PX_PER_POINT;
+      return p._usingFine ? p.ptsFine : p.pts;
+    }
+
+    // Y-axis rescales to whatever's actually in view (points inside [tMin, tMax]),
+    // not the full-history range, so zooming in also zooms the y-axis.
+    var allY = [0];
+    active.forEach(function (p) {
+      var src = pointsOf(p);
+      src.forEach(function (pt) { var x = xOfPoint(pt); if (x != null && x >= tMin && x <= tMax) allY.push(yValueOfPt(pt, p._usingFine)); });
+    });
+    activeWins.forEach(function (mk) { var x = xOfMarker(mk); if (x != null && x >= tMin && x <= tMax) allY.push(yValueOfMk(mk)); });
+
+    var yMin = Math.min.apply(null, allY), yMax = Math.max.apply(null, allY);
+    var yPad = (yMax - yMin) * 0.1 || 0.05;
+    yMin -= yPad; yMax += yPad;
+
+    function X(t) { return M.left + (t - tMin) / (tMax - tMin) * innerW; }
+    function Y(v) { return M.top + innerH - (v - yMin) / (yMax - yMin) * innerH; }
+
+    var svgParts = [];
+    svgParts.push('<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">');
+    svgParts.push('<clipPath id="plotClip"><rect x="' + M.left + '" y="' + M.top + '" width="' + innerW + '" height="' + innerH + '"/></clipPath>');
+
+    var yTicks = 7;
+    for (var i = 0; i <= yTicks; i++) {
+      var v = yMin + (yMax - yMin) * i / yTicks;
+      var yy = Y(v);
+      var isZero = Math.abs(v) < (yMax - yMin) / yTicks / 2;
+      svgParts.push('<line class="gridline' + (isZero ? ' zero' : '') + '" x1="' + M.left + '" x2="' + (W - M.right) + '" y1="' + yy + '" y2="' + yy + '"/>');
+      svgParts.push('<text class="axislabel" x="' + (M.left - 10) + '" y="' + (yy + 3) + '" text-anchor="end">' + v.toFixed(2) + '</text>');
+      var pct = (1 / (1 + Math.exp(-v)) * 100).toFixed(0);
+      if (!showRaw) svgParts.push('<text class="axislabel" x="' + (M.left - 10) + '" y="' + (yy + 15) + '" text-anchor="end" opacity="0.55" font-size="8.5">' + pct + '% win</text>');
+    }
+    var refRank = refMode === "top20" ? "20" : refMode === "top50" ? "50" : "10";
+    var yAxisTitle = showRaw ? "raw rating (0 = average tour player)" : refMode === "str" ? "average win-odds vs. that era's No. 5–15 (log-odds)" : "win-odds vs. that era's top-" + refRank + " player (log-odds)";
+    svgParts.push('<text class="axistitle" transform="translate(18,' + (M.top + innerH / 2) + ') rotate(-90)" text-anchor="middle">' + yAxisTitle + '</text>');
+
+    if (xMode === "calendar") {
+      var startYear = new Date(tMin).getUTCFullYear(), endYear = new Date(tMax).getUTCFullYear();
+      var span = endYear - startYear;
+      var yearStep = span > 40 ? 5 : span > 15 ? 2 : 1;
+      for (var yr = Math.ceil(startYear / yearStep) * yearStep; yr <= endYear; yr += yearStep) {
+        var t = Date.UTC(yr, 0, 1);
+        if (t < tMin || t > tMax) continue;
+        var xx = X(t);
+        svgParts.push('<line class="gridline" x1="' + xx + '" x2="' + xx + '" y1="' + M.top + '" y2="' + (H - M.bottom) + '"/>');
+        svgParts.push('<text class="axislabel" x="' + xx + '" y="' + (H - M.bottom + 18) + '" text-anchor="middle">' + yr + '</text>');
+      }
+      svgParts.push('<text class="axistitle" x="' + (M.left + innerW / 2) + '" y="' + (H - 6) + '" text-anchor="middle">Calendar year</text>');
+    } else {
+      var xSpan = tMax - tMin;
+      var xStep = xSpan > 30 ? 5 : xSpan > 12 ? 2 : 1;
+      var startN = Math.ceil(tMin / xStep) * xStep;
+      for (var n = startN; n <= tMax; n += xStep) {
+        var xx2 = X(n);
+        svgParts.push('<line class="gridline" x1="' + xx2 + '" x2="' + xx2 + '" y1="' + M.top + '" y2="' + (H - M.bottom) + '"/>');
+        svgParts.push('<text class="axislabel" x="' + xx2 + '" y="' + (H - M.bottom + 18) + '" text-anchor="middle">' + n.toFixed(0) + '</text>');
+      }
+      var xTitle = xMode === "age" ? "Age (years)" : "Years since tour debut";
+      svgParts.push('<text class="axistitle" x="' + (M.left + innerW / 2) + '" y="' + (H - 6) + '" text-anchor="middle">' + xTitle + '</text>');
+    }
+
+    svgParts.push('<g clip-path="url(#plotClip)">');
+
+    active.forEach(function (p) {
+      var src = pointsOf(p);
+      if (!src.length) return;
+      var pts = src.filter(function (pt) { return xOfPoint(pt) != null; })
+        .sort(function (a, bb) { return xOfPoint(a) - xOfPoint(bb); })
+        .map(function (pt) { return [X(xOfPoint(pt)), Y(yValueOfPt(pt, p._usingFine))]; });
+      if (!pts.length) return;
+      var d = smoothPath(pts);
+      var viewLabel = surfMode ? (surfMode + " rating") :
+        showSurfAdj ? "surface-adjusted" : showStable ? "general rating, stable" : "general rating";
+      var refRankLabel = refMode === "top20" ? "20" : refMode === "top50" ? "50" : "10";
+      var labelBase = refMode === "fixed" ? viewLabel : refMode === "str" ? (viewLabel + ", strength vs No. 5–15") : (viewLabel + ", vs top-" + refRankLabel);
+      var label = p.name + " (" + (showRaw ? viewLabel + ", raw" : labelBase + (showClosing ? " + closing" : "") + (showClutch ? " + clutch" : "")) + ")" + (p._usingFine ? " — weekly" : "");
+      svgParts.push('<path class="trajline" data-player="' + p.name + '" d="' + d + '" stroke="' + p.color + '"><title>' + label + '</title></path>');
+    });
+
+    if (showWins) {
+      activeWins.forEach(function (mk) {
+        var xv = xOfMarker(mk);
+        if (xv == null) return;
+        var p = byName[mk.player];
+        var rv = yValueOfMk(mk);
+        var cx = X(xv), cy = Y(rv);
+        var ring = SLAM_HEX[mk.slam] || "#888";
+        var yr = mk.date.slice(0, 4);
+        svgParts.push('<circle class="bubble" data-player="' + mk.player + '" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="6" fill="' +
+          p.color + '" stroke="' + ring + '"><title>' + mk.player + ' — ' + mk.slam + ' ' + yr +
+          ' (rating ' + rv.toFixed(3) + ', beat ' + mk.opponent + ')</title></circle>');
+      });
+    }
+    svgParts.push('</g>');
+
+    // Transparent overlay over the plot area: catches drag-to-zoom without
+    // blocking hover/tooltips on the marks underneath (those get their own
+    // mouseenter/mouseleave via applyHoverDim; this only listens for drags).
+    // pointer-events="all" is needed because a fully transparent fill is not
+    // reliably hit-testable in every browser/webview under the default
+    // "visiblePainted" pointer-events behavior.
+    svgParts.push('<rect class="plotarea" x="' + M.left + '" y="' + M.top + '" width="' + innerW + '" height="' + innerH + '" fill="transparent" pointer-events="all"/>');
+
+    svgParts.push('</svg>');
+    chartHost.innerHTML = svgParts.join("");
+    applyHoverDim();
+
+    var svgEl = chartHost.querySelector("svg");
+    function clientToPx(clientX) {
+      var rect = svgEl.getBoundingClientRect();
+      var scale = W / rect.width;
+      return Math.max(M.left, Math.min(W - M.right, (clientX - rect.left) * scale));
+    }
+    function startDrag(clientX) {
+      var px = clientToPx(clientX);
+      var rectEl = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rectEl.setAttribute("class", "zoomrect");
+      rectEl.setAttribute("x", px); rectEl.setAttribute("y", M.top);
+      rectEl.setAttribute("width", 0); rectEl.setAttribute("height", innerH);
+      svgEl.appendChild(rectEl);
+      zoomDrag = { svg: svgEl, rectEl: rectEl, startPx: px, tMin: tMin, tMax: tMax, innerW: innerW, M: M, W: W };
+    }
+    var plotEl = svgEl.querySelector(".plotarea");
+    plotEl.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      startDrag(e.clientX);
+      e.preventDefault();
+    });
+    // Touch support (phones/tablets, and the in-app webview, don't fire mouse
+    // events): a single-finger drag on the chart does the same thing. This
+    // also needs touch-action:none on the element (set in CSS) so the browser
+    // doesn't treat the drag as a page-scroll instead of handing it to us.
+    plotEl.addEventListener("touchstart", function (e) {
+      if (e.touches.length !== 1) return;
+      startDrag(e.touches[0].clientX);
+      e.preventDefault();
+    }, { passive: false });
+  }
+
+  search.addEventListener("input", renderPicker);
+  toggleWins.addEventListener("change", function () {
+    showWins = toggleWins.checked;
+    legendWins.hidden = !showWins;
+    renderChart();
+  });
+  toggleSurfAdj.addEventListener("change", function () {
+    showSurfAdj = toggleSurfAdj.checked;
+    if (showSurfAdj && showStable) { showStable = false; toggleStable.checked = false; }
+    if (showSurfAdj && surfMode) { surfMode = ""; setSurfModeChip(""); }
+    renderChart();
+  });
+  toggleStable.addEventListener("change", function () {
+    showStable = toggleStable.checked;
+    if (showStable && showSurfAdj) { showSurfAdj = false; toggleSurfAdj.checked = false; }
+    if (showStable && surfMode) { surfMode = ""; setSurfModeChip(""); }
+    renderChart();
+  });
+  toggleClosing.addEventListener("change", function () {
+    showClosing = toggleClosing.checked;
+    renderChart();
+  });
+  var toggleClutch = document.getElementById("toggleClutch"), toggleRaw = document.getElementById("toggleRaw");
+  toggleClutch.addEventListener("change", function () { showClutch = toggleClutch.checked; renderChart(); });
+  toggleRaw.addEventListener("change", function () {
+    showRaw = toggleRaw.checked;
+    document.getElementById("rowClosing").classList.toggle("disabled", showRaw);
+    document.getElementById("rowClutch").classList.toggle("disabled", showRaw);
+    renderChart();
+  });
+
+  // Every view (general / surface-adjusted / stable / Hard / Clay / Grass)
+  // now works against every reference (top-10/20/50), with or without
+  // closing -- the browser runs the calibration chain itself (see the PT /
+  // effectiveRating block above DATA), so nothing here needs to be greyed
+  // out based on refMode any more. The six views remain mutually exclusive
+  // with each other (they all replace the same one line), which is a UI
+  // choice, not a technical limitation.
+  function setSurfModeChip(mode) {
+    surfModeChips.forEach(function (c) { c.setAttribute("aria-pressed", c.dataset.surf === mode ? "true" : "false"); });
+  }
+  refModeChips.forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      refMode = chip.dataset.ref;
+      refModeChips.forEach(function (c) { c.setAttribute("aria-pressed", c === chip ? "true" : "false"); });
+      renderChart();
+    });
+  });
+  surfModeChips.forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      surfMode = chip.dataset.surf;
+      setSurfModeChip(surfMode);
+      if (surfMode && showSurfAdj) { showSurfAdj = false; toggleSurfAdj.checked = false; }
+      if (surfMode && showStable) { showStable = false; toggleStable.checked = false; }
+      renderChart();
+    });
+  });
+
+  qfChamps.addEventListener("click", function () {
+    players.filter(function (p) { return p.titles >= 2; }).forEach(function (p) { selected.add(p.name); });
+    renderPicker(); renderChart();
+  });
+  qfDefault.addEventListener("click", function () {
+    selected = new Set(DEFAULT_ON);
+    renderPicker(); renderChart();
+  });
+  qfNone.addEventListener("click", function () {
+    selected = new Set();
+    renderPicker(); renderChart();
+  });
+
+  xModeChips.forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      xMode = chip.dataset.mode;
+      xModeChips.forEach(function (c) { c.setAttribute("aria-pressed", c === chip ? "true" : "false"); });
+      zoomRange = null; // the previous zoom's [tMin,tMax] was in the old axis's units, so it can't carry over
+      renderChart();
+    });
+  });
+
+  resetZoomBtn.addEventListener("click", function () {
+    zoomRange = null;
+    renderChart();
+  });
+
+  // Belt-and-braces safety net: if the cursor drifts off a pill/line without a
+  // mouseleave ever registering (e.g. it left via a neighboring element, or the
+  // page lost focus mid-hover), clear the lock on the very next pointer move
+  // anywhere in the document unless that move is over a hoverable element.
+  document.addEventListener("mousemove", function (e) {
+    if (!hoverName) return;
+    var el = e.target.closest ? e.target.closest(".pill,[data-player]") : null;
+    if (!el) { hoverName = null; applyHoverDim(); }
+  });
+
+  // Drag-to-zoom: mousedown/touchstart are attached fresh to each render's own
+  // SVG (see renderChart), but the move/end handlers are attached once here,
+  // reading whatever drag is in progress via the shared zoomDrag variable --
+  // attaching these inside renderChart would pile up a duplicate listener on
+  // every redraw, the same bug that caused the earlier hover-stuck issue.
+  function dragToPx(d, clientX) {
+    var rect = d.svg.getBoundingClientRect();
+    var scale = d.W / rect.width;
+    return Math.max(d.M.left, Math.min(d.W - d.M.right, (clientX - rect.left) * scale));
+  }
+  function updateDrag(clientX) {
+    if (!zoomDrag) return;
+    var px = dragToPx(zoomDrag, clientX);
+    var x0 = Math.min(zoomDrag.startPx, px), w = Math.abs(px - zoomDrag.startPx);
+    zoomDrag.rectEl.setAttribute("x", x0);
+    zoomDrag.rectEl.setAttribute("width", w);
+  }
+  function endDrag(clientX) {
+    if (!zoomDrag) return;
+    var d = zoomDrag;
+    zoomDrag = null;
+    if (d.rectEl && d.rectEl.parentNode) d.rectEl.parentNode.removeChild(d.rectEl);
+    var px = dragToPx(d, clientX);
+    var pxWidth = Math.abs(px - d.startPx);
+    if (pxWidth < 6) return; // treat as a click/tap, not a drag -- don't zoom into a sliver
+    var x0px = Math.min(d.startPx, px), x1px = Math.max(d.startPx, px);
+    var v0 = d.tMin + (x0px - d.M.left) / d.innerW * (d.tMax - d.tMin);
+    var v1 = d.tMin + (x1px - d.M.left) / d.innerW * (d.tMax - d.tMin);
+    zoomRange = [v0, v1];
+    renderChart();
+  }
+  document.addEventListener("mousemove", function (e) { updateDrag(e.clientX); });
+  document.addEventListener("mouseup", function (e) { endDrag(e.clientX); });
+  document.addEventListener("touchmove", function (e) {
+    if (!zoomDrag) return;
+    updateDrag(e.touches[0].clientX);
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchend", function (e) {
+    if (!zoomDrag) return;
+    endDrag(e.changedTouches[0].clientX);
+  });
+  document.addEventListener("touchcancel", function () {
+    if (zoomDrag && zoomDrag.rectEl && zoomDrag.rectEl.parentNode) zoomDrag.rectEl.parentNode.removeChild(zoomDrag.rectEl);
+    zoomDrag = null;
+  });
+
+  function setTour(tour, data) {
+    if (curTour) tourState[curTour] = { selected: selected };
+    curTour = tour; DATA = data;
+    CAL_I = DATA.cal.i; CAL_S = DATA.cal.s;
+    players = DATA.players;
+    winMarkers = DATA.slam_markers.filter(function (mk) { return mk.won; });
+    players.forEach(function (p, i) { p.color = PALETTE[i % PALETTE.length]; });
+    byName = {};
+    players.forEach(function (p) { byName[p.name] = p; });
+    DEFAULT_ON = DEFAULTS[tour];
+    var st = tourState[tour];
+    selected = st ? st.selected : new Set(DEFAULT_ON.filter(function (n) { return byName[n]; }));
+    zoomRange = null;   // x-axis mode is shared across tours, so a stored zoom could be in the wrong units
+    resetZoomBtn.hidden = !zoomRange;
+    var finalistCount = players.filter(function (p) { return p.finals > 0; }).length;
+    document.getElementById("subtitle").textContent = tour === "atp"
+      ? players.length.toLocaleString() + " ATP tour players since 1968 (including " + finalistCount +
+        " Grand Slam finalists) · win-probability vs. that era's top-10 tour player"
+      : players.length.toLocaleString() + " WTA tour players since 1992 (including " + finalistCount +
+        " Grand Slam finalists since 1990) · win-probability vs. that era's top-10 tour player";
+    document.getElementById("wtaChartNote").hidden = tour !== "wta";
+    search.value = "";
+    renderPicker();
+    renderChart();
+  }
+  window.__chartSetTour = setTour;
+  window.__chartTour = function () { return curTour; };
+})();
+</script>

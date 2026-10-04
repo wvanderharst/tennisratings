@@ -1,0 +1,56 @@
+{
+ "engine": "clone_engine.py (production machinery, serve/return split)",
+ "atp": {
+  "split": true,
+  "resid": "serve",
+  "pred": "hold",
+  "hm": 0.7,
+  "gb": 1.0,
+  "gain_early": 3.0,
+  "gscale": 0.8,
+  "pt_lam": 1.0,
+  "gap": true,
+  "lam": 0.6,
+  "surf_k": 0.6,
+  "k_ret": 1.0,
+  "ret_side": "winner"
+ },
+ "wta": {
+  "split": true,
+  "resid": "serve",
+  "pred": "hold",
+  "hm": 0.6,
+  "gb": 1.0,
+  "gain_early": 3.0,
+  "gscale": 1.0,
+  "pt_lam": 0.75,
+  "gap": true,
+  "lam": 0.7,
+  "surf_k": 0.4,
+  "k_ret": 1.0,
+  "ret_side": "winner"
+ },
+ "scores": {
+  "atp": {
+   "VAL": 0.55241,
+   "test": 0.61039,
+   "ALL2005": 0.58427,
+   "prod": [
+    0.55386,
+    0.61209,
+    0.586
+   ]
+  },
+  "wta": {
+   "VAL": 0.60221,
+   "test": 0.59239,
+   "ALL2005": 0.57908,
+   "prod": [
+    0.60457,
+    0.59504,
+    0.58135
+   ]
+  }
+ },
+ "note": "Oct 4: chosen on selection years. Gains come from hold-based prediction with point scale x hm, early-career gain, no decay; serve/return split itself is neutral (style moves match odds <1pp). Oct 4 (2): surface = general + gap model (gaps weighted 60/30/10 sum to zero, so general always lies between the worst and best surface; no rank fill). Same accuracy as the blend model, chosen for interpretability: ATP lam 0.6 gap step 0.6 (VAL 0.55258 test 0.61036 ALL 0.58446), WTA lam 0.7 step 0.4 (VAL 0.60300 test 0.59190 ALL 0.57864). Oct 4 (3): retirements with serve stats update the non-retiring player from the points played (k_ret 1, winner only): held-out ATP 0.61035 -> 0.60959, WTA 0.59191 -> 0.59097; chosen on selection years."
+}

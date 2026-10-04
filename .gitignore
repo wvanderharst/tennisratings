@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# downloaded / generated during a rebuild
+tml_zip/
+tennis/cache_*.npz
+tennis/cache_*_rows.pkl
+work/*.npz
+work/*.pkl
+update.log

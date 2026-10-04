@@ -1,0 +1,41 @@
+# Daily: download the latest TennisMyLife data, rebuild all ratings, publish the site to GitHub Pages.
+# This file must be at  .github/workflows/update-site.yml  in the ROOT of the repository.
+# Works whether the project files are at the repository root or inside a tennis_model/ folder.
+name: Update tennis ratings
+on:
+  schedule:
+    - cron: "17 5 * * *"        # every day 05:17 UTC
+  workflow_dispatch: {}          # "Run workflow" button on the Actions tab
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency: { group: pages, cancel-in-progress: false }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Update data and rebuild
+        run: |
+          D=.; [ -f tennis/update_data.py ] || D=tennis_model
+          cd "$D"
+          mkdir -p site_v8 work
+          python3 tennis/update_data.py --rebuild
+          mkdir -p "$GITHUB_WORKSPACE/_site"
+          cp site_v8/*.json site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/"
+          cp site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/index.html"
+          cp tennis_model_documentation.pdf "$GITHUB_WORKSPACE/_site/" || true
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4

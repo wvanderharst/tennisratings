@@ -1,0 +1,6 @@
+{
+ "gscale": 1.0,
+ "note": "WTA-specific: GAS step x1.0 (men x0.8). Chosen on WTA selection years among step 0.6-1.2, blend 0.5-0.7, points weight 0.5-1.0, young boost 1.0-2.2, idle decay, age drift variants; others stayed at the men's values. Data: TML WTA main tour 1990-2026 with 78 reversed scores fixed. Oct 3 (2): swapped serve stats flipped back (harness _stats_swapped); WTA update now 75% points / 25% games (pt_lam 0.75), chosen on selection years; adding a match-result term did not help. + serve/return split model (two ratings per player, service games -> sets -> match) as one extra input, step 0.024: full-stack selection years 0.60522 -> 0.60457, held-out 0.59576 -> 0.59504 (acc 67.79 -> 67.93%). Tested for men too: no gain in the full stack, not deployed there.",
+ "pt_lam": 0.75,
+ "sr_alpha": 0.024
+}
