@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "17 5 * * *"        # every day 05:17 UTC
   workflow_dispatch: {}          # "Run workflow" button on the Actions tab
+  push:                          # also rebuild and publish when the default branch changes
+    branches: [main, claude/runnable-repository-setup-cmr5zd]
+    paths-ignore: ["**.md"]
 permissions:
   contents: read
   pages: write
