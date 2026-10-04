@@ -54,6 +54,8 @@ jobs:
         run: |
           # full rebuild on request, and on the first Saturday of the month as a safety net
           if [ "$FULL_INPUT" = true ] || { [ "$EVENT" = schedule ] && [ "$(date -u +%d)" -le 7 ]; }; then export TENNIS_FULL=1; echo "full rebuild"; fi
+          # machine + library versions: floating-point results can differ in the last digits between CPU types
+          lscpu | grep -m1 "Model name"; python3 -c "import sys, numpy, scipy; print('python', sys.version.split()[0], 'numpy', numpy.__version__, 'scipy', scipy.__version__)"
           mkdir -p site_v8 work
           python3 tennis/update_data.py --rebuild
           mkdir -p "$GITHUB_WORKSPACE/_site"
