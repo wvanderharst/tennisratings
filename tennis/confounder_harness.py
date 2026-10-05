@@ -123,6 +123,8 @@ SURF_FILL_MODE = "one"   # "one": impute only the short player(s), keep the othe
 SURF_SHRINK_K = None     # if set (with SURF_FILL): EVERY player's surface rating is pooled toward the imputed value,
                          #   s_eff = (n*s + K*s_imputed)/(n + K), n = matches on that surface; no hard threshold
 DATA_PATHS = None   # set to a list of CSVs to run the model on another dataset (e.g. WTA)
+CHALL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tml-chall")
+CHALL_HIST = os.environ.get("TENNIS_CHALL") == "1"     # ATP: also load the pre-2024 Challenger seasons (experimental)
 
 
 def load():
@@ -134,6 +136,11 @@ def load():
             n = os.path.basename(p)
             if n[:4].isdigit() and int(n[:4]) < 2024:
                 paths.append(p)
+        if CHALL_HIST:      # Challenger seasons before 2024 (2024+ are in atp_uploads/)
+            for p in sorted(glob.glob(os.path.join(CHALL_DIR, "*_challenger.csv"))):
+                n = os.path.basename(p)
+                if n[:4].isdigit() and int(n[:4]) < 2024:
+                    paths.append(p)
     rows, seen = [], set()
     for path in paths:
         if "ATP_Database" in path or "qualifying_matches" in path:   # the WTA upload lives in the same folder
