@@ -47,7 +47,10 @@ else:
     for r in allrows:
         if r["level"] == "tour" and r["rnd"] not in ("Q1", "Q2", "Q3", "Q4"): career.update((r["a"], r["b"]))
 FINALISTS = set(finalist_counts)
-SELECTED = FINALISTS | {p for p, k in career.items() if k >= 40}
+# every tour-level title winner too (before 2024 the data has no Challengers, so e.g. a player who won one ATP title
+# but spent most of his career at Challenger level can stay under 40 matches)
+CHAMPS = {r["a"] for r in allrows if r["level"] == "tour" and r["rnd"] == "F" and r["lvl"] != "D"}
+SELECTED = FINALISTS | CHAMPS | {p for p, k in career.items() if k >= 40}
 DETAIL = FINALISTS | set(sorted(SELECTED - FINALISTS, key=lambda p: -career[p])[:max(170 - len(FINALISTS), 0)])
 print(len(SELECTED), "players,", len(DETAIL), "with weekly detail")
 
