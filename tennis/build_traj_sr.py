@@ -9,7 +9,7 @@ Surface views = 60% general + 40% that surface's own level; with no match on the
 separately, monthly pool of active players who have played there). Field thresholds (top-10/20/50 of active players,
 general and per surface) per month and per ISO week."""
 import paths as P
-import json, csv, sys, math, bisect
+import json, csv, sys, math, bisect, datetime
 from collections import defaultdict, Counter
 import numpy as np
 import score_driven as S
@@ -56,6 +56,10 @@ print(len(SELECTED), "players,", len(DETAIL), "with weekly detail")
 
 ST_DECAY = 0.5 ** (1 / 270.0)
 stab = {}; stab_t = {}
+# all-time peaks: each player's highest pre-match level (after PEAK_MIN matches, so early-career noise doesn't count),
+# from 1992 for the women (the chart's start; 1990-91 is warm-up)
+PEAK_MIN = 30; PEAK_FROM = datetime.date(1968 if TOUR == "atp" else 1992, 1, 1)
+peak = {}
 mc = defaultdict(int); first = {}
 fill = {}                       # monthly display pools: surface -> (sorted sg, sorted ss, sorted rg, sorted rs)
 thr_m, thr_w = {}, {}
@@ -153,11 +157,18 @@ def hook(i, r, X):
         if p in SELECTED:
             s_ = snap(p, r, X); snaps[p][ym] = s_; queries[i].append((s_, 12, p))
             if p in DETAIL: snaps_f[p][wk] = s_
+    if when >= PEAK_FROM:
+        for p in (a, b):
+            if mc[p] >= PEAK_MIN:
+                lv = (X["sg"][p] + X["rg"][p]) / 2
+                if p not in peak or lv > peak[p][0]:
+                    ag = H.age_at(p, when)
+                    peak[p] = (lv, when.isoformat(), round(ag, 1) if ag is not None else None, mc[p], thr_m[ym][0], X["sg"][p], X["rg"][p])
     mc[a] += 1; mc[b] += 1
 
 EXT, RIDX, _ = CE.build_ext(allrows)
 carry = dict(stab=stab, stab_t=stab_t, mc=mc, first=first, fill=fill, thr_m=thr_m, thr_w=thr_w, snaps=snaps, snaps_f=snaps_f,
-             markers=markers, state=state, ptr=ptr, queries=queries, CUR_I=CUR_I)
+             markers=markers, state=state, ptr=ptr, queries=queries, CUR_I=CUR_I, peak=peak)
 z, _ = CE.replay_ckpt(f"traj_{TOUR}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=carry,
                       deps=(sorted(SELECTED), sorted(DETAIL)), hook=hook, **CFG); z = z[RIDX]
 # deciding-set clutch (same running definition as the odds export), filled in pre-match for every snapshot
@@ -176,3 +187,11 @@ fn = f"{OUT}/traj_data_{TOUR}_sr.json"
 json.dump(data, open(fn, "w"), separators=(",", ":"))
 import os
 print("wrote", fn, round(os.path.getsize(fn) / 1e6, 1), "MB;", len(players), "players,", len(markers), "slam markers")
+
+# ---- all-time peaks (top 100) -> work/peaks_{tour}.json (copied to the site by build_site_v8.py) ----
+R3 = lambda x: round(float(x), 3)
+top = sorted(peak.items(), key=lambda kv: -kv[1][0])[:100]
+json.dump([dict(n=p, lv=R3(v[0]), d=v[1], age=v[2], m=v[3], vs10=R3(v[0] - v[4]), sv=R3(v[5]), rt=R3(v[6]),
+                slams=title_counts.get(p, 0), matches=career.get(p, 0)) for p, v in top],
+          open(f"{OUT}/peaks_{TOUR}.json", "w"), separators=(",", ":"))
+print("peaks:", ", ".join(f"{p} {v[0]:.2f} ({v[1][:4]})" for p, v in top[:5]))

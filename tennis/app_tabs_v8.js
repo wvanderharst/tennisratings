@@ -90,7 +90,7 @@
   }
 
   // ---------------- tabs ----------------
-  var panels = { chart: document.getElementById("panelChart"), rankings: document.getElementById("panelRankings"), odds: document.getElementById("panelOdds"), profile: document.getElementById("panelProfile") };
+  var panels = { chart: document.getElementById("panelChart"), rankings: document.getElementById("panelRankings"), odds: document.getElementById("panelOdds"), profile: document.getElementById("panelProfile"), peaks: document.getElementById("panelPeaks") };
   var tabBtns = Array.prototype.slice.call(document.querySelectorAll("#tabs button"));
   var chartHost = document.getElementById("chartHost");
   function showTab(tab) {
@@ -99,6 +99,7 @@
     panels.rankings.hidden = tab !== "rankings";
     panels.odds.hidden = tab !== "odds";
     panels.profile.hidden = tab !== "profile";
+    panels.peaks.hidden = tab !== "peaks";
     var sub = document.getElementById("subtitle");
     if (tab === "men" || tab === "women") {
       var tour = tab === "men" ? "atp" : "wta";
@@ -110,6 +111,9 @@
     } else if (tab === "rankings") {
       sub.textContent = "Every active player ranked on what the full model expects them to win: average chance against the current No. 5\u201315";
       renderRankings();
+    } else if (tab === "peaks") {
+      sub.textContent = "The 100 highest ratings ever reached: each player's career peak, men since 1968 and women since 1992";
+      renderPeaks();
     } else if (tab === "profile") {
       sub.textContent = "Every match of a player: the model's pre-match win chance and what each result did to the ratings";
       renderProfile();
@@ -278,6 +282,43 @@
         "<strong>Strength</strong> ranks players on what the full model expects them to <em>win</em>: their average chance against the players currently ranked 5th to 15th on the general rating (tour event, best of 3, standard court; a player in that group is not counted against themselves), including closing, clutch and head-to-heads; <em>General</em> weights hard 60%, clay 30%, grass 10%. <strong>Closing</strong> is the set-level finishing rating and <strong>Clutch</strong> the deciding-set rating. " +
         (C.tour === "atp" ? "" : "Women's correction weights (clutch, top-4 at Slams, age, height, court speed) are fitted on WTA matches; fewer women qualify as active (30+ main-tour matches in the past year), because the data has no ITF or qualifying matches. ") + "Click a column to sort, or a name to open that player\u2019s profile.";
     }).catch(function (e) { rkTable.innerHTML = '<tr><td class="loading">Couldn’t load ratings: ' + esc(e.message) + "</td></tr>"; });
+  }
+
+  // ---------------- all-time peaks tab ----------------
+  var pk = { tour: "atp", by: "lv" };
+  var pkTable = document.getElementById("pkTable");
+  segBind("pkTour", "tour", function (v) { pk.tour = v; renderPeaks(); });
+  segBind("pkBy", "by", function (v) { pk.by = v; renderPeaks(); });
+  function sgn(x, d) { return (x >= 0 ? "+" : "\u2212") + Math.abs(x).toFixed(d); }
+  function renderPeaks() {
+    pkTable.innerHTML = '<tr><td class="loading" style="text-align:center">Loading peaks&hellip;</td></tr>';
+    var tour = pk.tour;
+    load("peaks_" + tour + ".json").then(function (rows) {
+      if (pk.tour !== tour) return;
+      var sorted = rows.slice().sort(function (a, b) { return b[pk.by] - a[pk.by]; });
+      var head = "<thead><tr>" + [["#", "l"], ["Player", "l"], [pk.by === "lv" ? "Peak rating \u2193" : "Peak rating", ""],
+        [pk.by === "vs10" ? "Lead over No. 10 \u2193" : "Lead over No. 10", ""], ["Serve", ""], ["Return", ""], ["Date", ""], ["Age", ""],
+        ["Matches then", ""], ["Slams", ""]].map(function (c) {
+          var on = c[0].indexOf("\u2193") >= 0;
+          return '<th class="' + c[1] + (on ? " sorted" : "") + '"><button tabindex="-1">' + c[0] + "</button></th>";
+        }).join("") + "</tr></thead>";
+      var body = sorted.map(function (r, i) {
+        return "<tr>" +
+          '<td class="pos l">' + (i + 1) + "</td>" +
+          '<td class="l"><span class="pname link" data-n="' + esc(r.n) + '" title="Open player profile">' + esc(r.n) + "</span></td>" +
+          '<td class="num" style="font-weight:700">' + r.lv.toFixed(3) + "</td>" +
+          '<td class="num">' + sgn(r.vs10, 3) + "</td>" +
+          '<td class="num">' + r.sv.toFixed(2) + '</td><td class="num">' + r.rt.toFixed(2) + "</td>" +
+          '<td class="num">' + fmtDate(r.d) + "</td>" +
+          '<td class="num">' + (r.age != null ? r.age.toFixed(1) : "\u2013") + "</td>" +
+          '<td class="num">' + r.m + "</td>" +
+          '<td class="num">' + (r.slams || "") + "</td></tr>";
+      }).join("");
+      pkTable.innerHTML = head + "<tbody>" + body + "</tbody>";
+      Array.prototype.forEach.call(pkTable.querySelectorAll(".pname.link"), function (s) {
+        s.addEventListener("click", function () { openProfile(tour, s.dataset.n); window.scrollTo(0, 0); });
+      });
+    }).catch(function (e) { pkTable.innerHTML = '<tr><td class="loading">Couldn\u2019t load the peaks: ' + esc(e.message) + "</td></tr>"; });
   }
 
   // ---------------- match odds tab ----------------
@@ -629,7 +670,7 @@
 
   // ---------------- boot ----------------
   var start = (location.hash || "").replace("#", "");
-  if (["men", "women", "rankings", "odds", "profile"].indexOf(start) < 0) start = "men";
+  if (["men", "women", "rankings", "peaks", "odds", "profile"].indexOf(start) < 0) start = "men";
   if (start !== "men") load("traj_atp.json");   // warm the default chart in the background
   showTab(start);
   window.__oddsCompute = function (tour, a, b, o) { var D = ODDS[tour]; return compute(D, findP(D, a), findP(D, b), o).p; };

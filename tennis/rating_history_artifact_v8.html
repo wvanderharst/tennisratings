@@ -299,6 +299,7 @@
     <button role="tab" id="tab-men" data-tab="men" aria-selected="true">Men &middot; history</button>
     <button role="tab" id="tab-women" data-tab="women" aria-selected="false">Women &middot; history</button>
     <button role="tab" id="tab-rankings" data-tab="rankings" aria-selected="false">Current ratings</button>
+    <button role="tab" id="tab-peaks" data-tab="peaks" aria-selected="false">All-time peaks</button>
     <button role="tab" id="tab-odds" data-tab="odds" aria-selected="false">Match odds</button>
     <button role="tab" id="tab-profile" data-tab="profile" aria-selected="false">Player profile</button>
   </nav>
@@ -401,6 +402,32 @@
       <div class="showmore"><span class="qf" id="rkMore" role="button" tabindex="0">Show all</span></div>
     </div>
     <div class="note" id="rkNote"></div>
+  </section>
+
+  <section id="panelPeaks" hidden>
+    <div class="card">
+      <div class="rk-top">
+        <div class="toolbar-group">
+          <div class="seg" id="pkTour">
+            <button data-tour="atp" aria-pressed="true">Men</button>
+            <button data-tour="wta" aria-pressed="false">Women</button>
+          </div>
+          <div class="seg" id="pkBy">
+            <button data-by="lv" aria-pressed="true">Peak rating</button>
+            <button data-by="vs10" aria-pressed="false">Lead over No. 10 then</button>
+          </div>
+        </div>
+      </div>
+      <div class="tablewrap"><table class="rk" id="pkTable"></table></div>
+    </div>
+    <div class="note">
+      Each player&rsquo;s <strong>highest rating ever</strong> (level = (serve + return) / 2, the same number as in the
+      Current ratings tab), taken just before a match, once the player had played at least 30 rated matches, so a hot
+      start doesn&rsquo;t count. <strong>Lead over No. 10 then</strong> subtracts the level of that moment&rsquo;s
+      No. 10 active player, which compares eras on equal terms; rank by it with the button above. Men from 1968, women
+      from 1992 (the women&rsquo;s data starts in 1990 and needs a couple of years to settle). The 100 highest peaks;
+      click a name for the player&rsquo;s profile.
+    </div>
   </section>
 
   <section id="panelOdds" hidden>
