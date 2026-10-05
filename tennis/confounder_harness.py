@@ -124,7 +124,7 @@ SURF_SHRINK_K = None     # if set (with SURF_FILL): EVERY player's surface ratin
                          #   s_eff = (n*s + K*s_imputed)/(n + K), n = matches on that surface; no hard threshold
 DATA_PATHS = None   # set to a list of CSVs to run the model on another dataset (e.g. WTA)
 CHALL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tml-chall")
-CHALL_HIST = os.environ.get("TENNIS_CHALL") == "1"     # ATP: also load the pre-2024 Challenger seasons (experimental)
+CHALL_HIST = os.environ.get("TENNIS_CHALL", "1") == "1"   # ATP: also load the pre-2024 Challenger seasons (TENNIS_CHALL=0: off)
 
 
 def load():

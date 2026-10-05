@@ -122,7 +122,10 @@ Other ways to run it:
 
 - **Without the rebuild:** `python3 tennis/update_data.py`.
 - **From a zip you downloaded yourself:** `python3 tennis/update_data.py --zip tml.zip --rebuild`.
-- **Old years:** history before 2024 never changes and stays in `tennis/tml-db/`.
+- **Old years:** history before 2024 never changes and stays in `tennis/tml-db/` (tour level) and `tennis/tml-chall/`
+  (Challengers 1999–2023). The Challenger history improves the held-out predictions everywhere (log-loss on tour-level
+  matches 2017–23 0.5927 → 0.5861, 2024+ 0.5956 → 0.5915; Challengers 2024+ 0.6323 → 0.6258) with the model settings
+  unchanged (retuning them, the start ratings included, gave no further gain on the test years). `TENNIS_CHALL=0` leaves it out.
 - **Parameters:** nothing is refitted; the model parameters stay fixed in `work/*.json`.
 - **The downloaded files:** each update replaces `atp_uploads/` (seasons 2024+) and `wta_data/wta_tml.csv` with the
   fresh download. They are full copies of those seasons, so nothing is lost; matches TennisMyLife corrects get corrected here too.
@@ -163,7 +166,8 @@ tennisratings/
     confounder_harness.py    data loading, set/match probability chain, calibration constants
     odds_export_sr.py        current ratings + corrections layer + odds constants for the page
     fast_grid.py             parameter search harness used to tune sr_clone_fit.json (not needed to rebuild)
-    tml-db/                  ATP history 1968–2023 (TennisMyLife)
+    tml-db/                  ATP history 1968–2023, tour level (TennisMyLife)
+    tml-chall/               ATP Challenger seasons 1999–2023 (TennisMyLife; 2019 only to mid-June)
   atp_uploads/               ATP 2024 onward: tour + challenger seasons and this week's running events
   wta_data/                  WTA matches 1990 onward (TennisMyLife) + birthdates
   tml_zip/                   the last download, extracted (created by update_data.py)
