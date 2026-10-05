@@ -67,18 +67,20 @@ jobs:
         with:
           path: state
           key: replay-state-${{ github.run_id }}
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
       - name: Commit the updated data
         # the downloaded match files + last_update.txt; a commit every week also keeps the schedule enabled
-        # (GitHub turns off scheduled workflows after 60 days without repository activity)
+        # (GitHub turns off scheduled workflows after 60 days without repository activity).
+        # A failure here (shown in the run) does not stop the site from being published.
+        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add atp_uploads wta_data last_update.txt
           if git diff --cached --quiet; then echo "no data changes"; exit 0; fi
           git commit -m "Data update: $(cat last_update.txt)"
-          for i in 1 2 3; do git push && exit 0; git pull --rebase --autostash; done; exit 1   # someone else pushed meanwhile
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: _site }
+          for i in 1 2 3; do git push && exit 0; git pull --rebase --autostash -X theirs; done; exit 1   # someone pushed meanwhile: keep this run's (newest) data
   deploy:
     needs: build
     runs-on: ubuntu-latest
