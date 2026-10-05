@@ -112,7 +112,7 @@
       sub.textContent = "Every active player ranked on what the full model expects them to win: average chance against the current No. 5\u201315";
       renderRankings();
     } else if (tab === "peaks") {
-      sub.textContent = "The 100 highest ratings ever reached: each player's career peak, men since 1968 and women since 1992";
+      sub.textContent = "The 100 highest ratings ever reached: each player's career peak, men since 1969 and women since 1992";
       renderPeaks();
     } else if (tab === "profile") {
       sub.textContent = "Every match of a player: the model's pre-match win chance and what each result did to the ratings";
@@ -293,11 +293,11 @@
   function renderPeaks() {
     pkTable.innerHTML = '<tr><td class="loading" style="text-align:center">Loading peaks&hellip;</td></tr>';
     var tour = pk.tour;
-    load("peaks_" + tour + ".json").then(function (rows) {
+    load("peaks_" + tour + ".json").then(function (data) {
       if (pk.tour !== tour) return;
-      var sorted = rows.slice().sort(function (a, b) { return b[pk.by] - a[pk.by]; });
-      var head = "<thead><tr>" + [["#", "l"], ["Player", "l"], [pk.by === "lv" ? "Peak rating \u2193" : "Peak rating", ""],
-        [pk.by === "vs10" ? "Lead over No. 10 \u2193" : "Lead over No. 10", ""], ["Serve", ""], ["Return", ""], ["Date", ""], ["Age", ""],
+      var sorted = data[pk.by];          // two lists: highest level, and biggest lead over No. 5-15 (each at its own moment)
+      var head = "<thead><tr>" + [["#", "l"], ["Player", "l"], [pk.by === "lv" ? "Peak rating \u2193" : "Rating then", ""],
+        [pk.by === "lead" ? "Lead over No. 5\u201315 \u2193" : "Lead over No. 5\u201315", ""], ["Serve", ""], ["Return", ""], ["Date", ""], ["Age", ""],
         ["Matches then", ""], ["Slams", ""]].map(function (c) {
           var on = c[0].indexOf("\u2193") >= 0;
           return '<th class="' + c[1] + (on ? " sorted" : "") + '"><button tabindex="-1">' + c[0] + "</button></th>";
@@ -307,7 +307,7 @@
           '<td class="pos l">' + (i + 1) + "</td>" +
           '<td class="l"><span class="pname link" data-n="' + esc(r.n) + '" title="Open player profile">' + esc(r.n) + "</span></td>" +
           '<td class="num" style="font-weight:700">' + r.lv.toFixed(3) + "</td>" +
-          '<td class="num">' + sgn(r.vs10, 3) + "</td>" +
+          '<td class="num">' + sgn(r.lead, 3) + "</td>" +
           '<td class="num">' + r.sv.toFixed(2) + '</td><td class="num">' + r.rt.toFixed(2) + "</td>" +
           '<td class="num">' + fmtDate(r.d) + "</td>" +
           '<td class="num">' + (r.age != null ? r.age.toFixed(1) : "\u2013") + "</td>" +

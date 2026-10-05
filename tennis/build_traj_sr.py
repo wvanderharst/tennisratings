@@ -56,10 +56,11 @@ print(len(SELECTED), "players,", len(DETAIL), "with weekly detail")
 
 ST_DECAY = 0.5 ** (1 / 270.0)
 stab = {}; stab_t = {}
-# all-time peaks: each player's highest pre-match level (after PEAK_MIN matches, so early-career noise doesn't count),
-# from 1992 for the women (the chart's start; 1990-91 is warm-up)
-PEAK_MIN = 30; PEAK_FROM = datetime.date(1968 if TOUR == "atp" else 1992, 1, 1)
-peak = {}
+# all-time peaks: each player's highest pre-match level (after PEAK_MIN matches, so early-career noise doesn't count)
+# and its lead over the average of that moment's No. 5-15,
+# from 1969 for the men and 1992 for the women (warm-up of the data)
+PEAK_MIN = 30; PEAK_FROM = datetime.date(1969 if TOUR == "atp" else 1992, 1, 1)   # 1968: the data starts, the No. 5-15 reference is still forming
+peak = {}; peak_lead = {}      # highest level / biggest lead over No. 5-15, each with its own moment
 mc = defaultdict(int); first = {}
 fill = {}                       # monthly display pools: surface -> (sorted sg, sorted ss, sorted rg, sorted rs)
 thr_m, thr_w = {}, {}
@@ -161,14 +162,18 @@ def hook(i, r, X):
         for p in (a, b):
             if mc[p] >= PEAK_MIN:
                 lv = (X["sg"][p] + X["rg"][p]) / 2
-                if p not in peak or lv > peak[p][0]:
+                ref = sum(thr_m[ym][12:23]) / 11          # average level of that moment's No. 5-15 (general)
+                new_lv = p not in peak or lv > peak[p][0]; new_ld = p not in peak_lead or lv - ref > peak_lead[p][0] - peak_lead[p][4]
+                if new_lv or new_ld:
                     ag = H.age_at(p, when)
-                    peak[p] = (lv, when.isoformat(), round(ag, 1) if ag is not None else None, mc[p], thr_m[ym][0], X["sg"][p], X["rg"][p])
+                    v = (lv, when.isoformat(), round(ag, 1) if ag is not None else None, mc[p], ref, X["sg"][p], X["rg"][p])
+                    if new_lv: peak[p] = v
+                    if new_ld: peak_lead[p] = v
     mc[a] += 1; mc[b] += 1
 
 EXT, RIDX, _ = CE.build_ext(allrows)
 carry = dict(stab=stab, stab_t=stab_t, mc=mc, first=first, fill=fill, thr_m=thr_m, thr_w=thr_w, snaps=snaps, snaps_f=snaps_f,
-             markers=markers, state=state, ptr=ptr, queries=queries, CUR_I=CUR_I, peak=peak)
+             markers=markers, state=state, ptr=ptr, queries=queries, CUR_I=CUR_I, peak=peak, peak_lead=peak_lead)
 z, _ = CE.replay_ckpt(f"traj_{TOUR}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=carry,
                       deps=(sorted(SELECTED), sorted(DETAIL)), hook=hook, **CFG); z = z[RIDX]
 # deciding-set clutch (same running definition as the odds export), filled in pre-match for every snapshot
@@ -190,8 +195,9 @@ print("wrote", fn, round(os.path.getsize(fn) / 1e6, 1), "MB;", len(players), "pl
 
 # ---- all-time peaks (top 100) -> work/peaks_{tour}.json (copied to the site by build_site_v8.py) ----
 R3 = lambda x: round(float(x), 3)
-top = sorted(peak.items(), key=lambda kv: -kv[1][0])[:100]
-json.dump([dict(n=p, lv=R3(v[0]), d=v[1], age=v[2], m=v[3], vs10=R3(v[0] - v[4]), sv=R3(v[5]), rt=R3(v[6]),
-                slams=title_counts.get(p, 0), matches=career.get(p, 0)) for p, v in top],
-          open(f"{OUT}/peaks_{TOUR}.json", "w"), separators=(",", ":"))
-print("peaks:", ", ".join(f"{p} {v[0]:.2f} ({v[1][:4]})" for p, v in top[:5]))
+def top100(pk, key):
+    return [dict(n=p, lv=R3(v[0]), d=v[1], age=v[2], m=v[3], lead=R3(v[0] - v[4]), sv=R3(v[5]), rt=R3(v[6]),
+                 slams=title_counts.get(p, 0), matches=career.get(p, 0)) for p, v in sorted(pk.items(), key=key)[:100]]
+PK = dict(lv=top100(peak, lambda kv: -kv[1][0]), lead=top100(peak_lead, lambda kv: -(kv[1][0] - kv[1][4])))
+json.dump(PK, open(f"{OUT}/peaks_{TOUR}.json", "w"), separators=(",", ":"))
+for k in PK: print(f"peaks by {k}:", ", ".join(f"{r['n']} {r['lv']:.2f}/{r['lead']:+.2f} ({r['d'][:4]})" for r in PK[k][:5]))
