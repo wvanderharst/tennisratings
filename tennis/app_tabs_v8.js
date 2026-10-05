@@ -112,7 +112,7 @@
       sub.textContent = "Every active player ranked on what the full model expects them to win: average chance against the current No. 5\u201315";
       renderRankings();
     } else if (tab === "peaks") {
-      sub.textContent = "The 100 highest ratings ever reached: each player's career peak, men since 1969 and women since 1992";
+      sub.textContent = "The 100 greatest peaks: each player's biggest lead over that moment's No. 5\u201315, men since 1969 and women since 1992";
       renderPeaks();
     } else if (tab === "profile") {
       sub.textContent = "Every match of a player: the model's pre-match win chance and what each result did to the ratings";
@@ -285,7 +285,7 @@
   }
 
   // ---------------- all-time peaks tab ----------------
-  var pk = { tour: "atp", by: "lv" };
+  var pk = { tour: "atp", by: "lead" };
   var pkTable = document.getElementById("pkTable");
   segBind("pkTour", "tour", function (v) { pk.tour = v; renderPeaks(); });
   segBind("pkBy", "by", function (v) { pk.by = v; renderPeaks(); });
