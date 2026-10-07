@@ -261,6 +261,41 @@
     st.base = { sets: st.sets.map(function (x) { return x.slice(); }), g: st.g.slice() }; st.trk = [0, 0, 0, 0]; st.unt = st.pt[0] + st.pt[1] > 0;
     return { st: st };
   }
+  // ---- retirement / walkover risk during the match ----
+  // Pre-match, a share rr of matches ends early, and then the favourite advances with only slope bb (compute()). During the
+  // match that risk scales with what is still to be played: the expected number of remaining games (played out from this
+  // score with the pre-match hold chances; a tiebreak counts as one game) over the expected total at 0-0.
+  function lvRetFrac(R, st, bo, fmt) {
+    var M = new IM(logit(R.ha), logit(R.hb), bo, fmt), h1 = hold(R.ha), h2 = hold(R.hb), need = M.need, memo = {};
+    function after(s1, s2, a, b, srv) {
+      var w = setWon(a, b);
+      return w === 1 ? E(s1 + 1, s2, 0, 0, srv) : w === -1 ? E(s1, s2 + 1, 0, 0, srv) : E(s1, s2, a, b, srv);
+    }
+    function E(s1, s2, a, b, srv) {
+      if (s1 === need || s2 === need) return 0;
+      var key = s1 + "_" + s2 + "_" + a + "_" + b + "_" + srv;
+      if (memo[key] !== undefined) return memo[key];
+      var L = M.lim(s1, s2), v;
+      if (a === L && b === L && !M.adv(s1, s2)) {               // tiebreak: one game, about even
+        var pt = 0.5 * (h1 + 1 - h2);
+        v = 1 + pt * E(s1 + 1, s2, 0, 0, 1 - srv) + (1 - pt) * E(s1, s2 + 1, 0, 0, 1 - srv);
+      } else if (M.adv(s1, s2) && a === b && a >= 5) {           // advantage set: pairs of service games until a break
+        var q = h1 * (1 - h2) + (1 - h1) * h2, pw = h1 * (1 - h2) / q;
+        v = 2 / q + pw * E(s1 + 1, s2, 0, 0, srv) + (1 - pw) * E(s1, s2 + 1, 0, 0, srv);
+      } else {
+        var g = srv === 0 ? h1 : 1 - h2;
+        v = 1 + g * after(s1, s2, a + 1, b, 1 - srv) + (1 - g) * after(s1, s2, a, b + 1, 1 - srv);
+      }
+      return (memo[key] = v);
+    }
+    var won = lvWon(st), e0 = 0.5 * (E(0, 0, 0, 0, 0) + E(0, 0, 0, 0, 1));
+    return Math.min(1, E(won[0], won[1], st.g[0], st.g[1], st.srv) / e0);
+  }
+  function lvWithRet(R, p, f) {                  // chance to advance, from the chance if completed and the share still to play
+    var r = (R.rr || 0) * f, b = R.bb || 0;
+    return clamp((1 - r) * p + r * sig(b * logit(clamp(p, 1e-9, 1 - 1e-9))), 1e-9, 1 - 1e-9);
+  }
+
   function lvEval(R, st, bo, fmt, tau) {        // live probability for player 1 (completed match)
     var M = new IM(logit(R.ha), logit(R.hb), bo, fmt), p0 = R.pDone, k;
     var v0a = M.val(0, 0, 0, 0, 0), v0b = M.val(0, 0, 0, 0, 1), v0 = new Float64Array(NU);
@@ -704,7 +739,7 @@
     var R = C.ret || { r_slam: 0, b_slam: 0, r_other: 0, b_other: 0 }, rr = o.lvl === "G" ? R.r_slam : R.r_other, bb = o.lvl === "G" ? R.b_slam : R.b_other;
     var pAdv = clamp((1 - rr) * pDone + rr * sig(bb * z), 1e-9, 1 - 1e-9);
     parts.push({ k: "ret", z: logit(pAdv) - z });
-    return { p: pAdv, pDone: pDone, z: logit(pAdv), parts: parts, useS: both || !!pool, rec: rec, fast: fast, si: si, ea: ea, eb: eb, ha: ha, hb: hb, rr: rr };
+    return { p: pAdv, pDone: pDone, z: logit(pAdv), parts: parts, useS: both || !!pool, rec: rec, fast: fast, si: si, ea: ea, eb: eb, ha: ha, hb: hb, rr: rr, bb: bb };
   }
 
   function renderOdds() {
@@ -856,7 +891,7 @@
       brk.innerHTML = '<tr><td class="d">Match over: ' + esc(wn) + " won " + st.sets.map(function (x) { return x.join("–"); }).join(" ") + ".</td></tr>";
       nxt.innerHTML = ""; return;
     }
-    var p = E.p;
+    var pc = E.p, fRet = lvRetFrac(R, st, bo, fmt), p = lvWithRet(R, pc, fRet);   // pc: if completed; p: to advance (retirement risk of the rest)
     document.getElementById("lvPA").textContent = (p * 100).toFixed(1) + "%"; document.getElementById("lvPB").textContent = ((1 - p) * 100).toFixed(1) + "%";
     document.getElementById("lvBar").style.width = (p * 100).toFixed(2) + "%";
     function pp(x) { return (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(1) + " pp"; }
@@ -867,21 +902,23 @@
       "estimated from the score: " + sa + " wins " + (E.srv1t * 100).toFixed(1) + "% of points on serve (" + (E.srv1 * 100).toFixed(1) + "% expected before the match), " +
       sb + " " + (E.srv2t * 100).toFixed(1) + "% (" + (E.srv2 * 100).toFixed(1) + "%)" + trTxt;
     brk.innerHTML =
-      "<tr><td><strong>Before the match</strong><div class=\"d\">chance if completed (the headline above also counts retirements)</div></td><td></td><td class=\"v\">" + (E.p0 * 100).toFixed(1) + "%</td></tr>" +
+      "<tr><td><strong>Before the match</strong><div class=\"d\">chance if completed</div></td><td></td><td class=\"v\">" + (E.p0 * 100).toFixed(1) + "%</td></tr>" +
       "<tr><td><strong>The score</strong><div class=\"d\">exact chance from here if both play at their pre-match level</div></td><td>" + bar(E.pStatic - E.p0) + '</td><td class="v">' + pp(E.pStatic - E.p0) + "</td></tr>" +
-      "<tr><td><strong>Form on the day</strong><div class=\"d\">" + esc(formTxt) + "</div></td><td>" + bar(p - E.pStatic) + '</td><td class="v">' + pp(p - E.pStatic) + "</td></tr>" +
-      '<tr class="tot"><td>' + esc(A.n) + ' wins</td><td></td><td class="v">' + (p * 100).toFixed(1) + "%</td></tr>";
-    var nA = ev(lvAdvance(st, 0, bo, fmt)), nB = ev(lvAdvance(st, 1, bo, fmt));
-    function pv(e) { return e.over ? (e.over === 1 ? 100 : 0).toFixed(1) + "%" : (e.p * 100).toFixed(1) + "%"; }
+      "<tr><td><strong>Form on the day</strong><div class=\"d\">" + esc(formTxt) + "</div></td><td>" + bar(pc - E.pStatic) + '</td><td class="v">' + pp(pc - E.pStatic) + "</td></tr>" +
+      "<tr><td><strong>Retirement risk</strong><div class=\"d\">" + ((R.rr || 0) * 100).toFixed(1) + "% of these matches end early (retirement or walkover), and then strength barely counts; about " +
+      Math.round(fRet * 100) + "% of the match is still to play</div></td><td>" + bar(p - pc) + '</td><td class="v">' + pp(p - pc) + "</td></tr>" +
+      '<tr class="tot"><td>' + esc(A.n) + ' advances</td><td></td><td class="v">' + (p * 100).toFixed(1) + "%</td></tr>";
+    var stA = lvAdvance(st, 0, bo, fmt), stB = lvAdvance(st, 1, bo, fmt), nA = ev(stA), nB = ev(stB);
+    function pv(e, s) { return e.over ? (e.over === 1 ? 100 : 0).toFixed(1) + "%" : (lvWithRet(R, e.p, lvRetFrac(R, s, bo, fmt)) * 100).toFixed(1) + "%"; }
     var server = tb ? (st.srv === 0 ? sa : sb) : (st.srv === 0 ? sa : sb);
-    nxt.innerHTML = "<div>If " + esc(sa) + " wins it<b>" + pv(nA) + "</b></div><div>If " + esc(sb) + " wins it<b>" + pv(nB) + "</b></div>";
+    nxt.innerHTML = "<div>If " + esc(sa) + " wins it<b>" + pv(nA, stA) + "</b></div><div>If " + esc(sb) + " wins it<b>" + pv(nB, stB) + "</b></div>";
     document.getElementById("lvNote").innerHTML = "<strong>" + esc(server) + " is serving.</strong> " +
       "The live chance plays out the rest of the match exactly, point by point, from this score (games, tiebreaks and the deciding-set format), with each player's chance to win a point on serve from the ratings. " +
       "The score also says something about how well both are playing today, so the model updates that: before the match it allows for a typical day-to-day swing in form. Points you step through with the buttons all count (a love hold says more than a hold from deuce); for a typed score only the completed sets and games are known, and inside a typed game the points decide the chance to win that game, whose result then updates the form. " +
       "Tested on 9,500 point-by-point charted matches (Match Charting Project), this form update clearly beats keeping strength fixed: with fixed strength, a favourite broken early or a set down is rated far too high. " +
       "Its speed is fitted on those matches. In typical situations it lands within 2 points of what actually happened (favourites broken in the first game won 61% for men, 61.5% predicted; 64% for women, 61% predicted). <em>Half</em> and <em>Off</em> scale the form part down if you want to see how much of the swing it explains. " +
       "There is no separate momentum term: recent sets were no more telling than earlier ones, and having just won a set added nothing beyond what the score already says about form. " +
-      "Shown as the chance to win if the match is completed.";
+      "Shown as the chance to <em>advance</em>, like the headline above: a share of matches ends early through a retirement (or, before the start, a walkover), and then strength barely counts. That risk shrinks with what is still to be played, measured in expected remaining games, so at 0&ndash;0 the live chance equals the headline and at match point it is almost gone. (The walkover part of the risk is counted the same way, a slight overstatement once the match is under way.)";
   }
 
   // ---------------- player profile tab ----------------
