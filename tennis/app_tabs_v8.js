@@ -57,6 +57,266 @@
     return logit(clamp(matchFromSet(clamp(s, 1e-6, 1 - 1e-6), bo), 1e-6, 1 - 1e-6));
   }
 
+  // ---------------- in-match engine (line-by-line port of inplay_lib.py) ----------------
+  // Player 1 wins a point on serve with sigmoid(l1 + u), player 2 with sigmoid(l2 - u); u = form on the day, on a grid.
+  var IM_TAU = { atp: 0.15, wta: 0.2 };            // spread of match-day form, fitted on charted matches (training years, point-by-point evidence)
+  var UG = (function () { var a = new Float64Array(161); for (var k = 0; k < 161; k++) a[k] = Math.round((-2.4 + 0.03 * k) * 1e4) / 1e4; return a; })();
+  var NU = UG.length;
+  function vconst(x) { var a = new Float64Array(NU); a.fill(x); return a; }
+  function IM(l1, l2, bo, fmt) {
+    this.need = (bo >> 1) + 1; this.fmt = fmt;
+    var p1 = new Float64Array(NU), p2 = new Float64Array(NU), h1 = new Float64Array(NU), h2 = new Float64Array(NU);
+    for (var k = 0; k < NU; k++) { p1[k] = sig(l1 + UG[k]); p2[k] = sig(l2 - UG[k]); h1[k] = hold(p1[k]); h2[k] = hold(p2[k]); }
+    this.p = [p1, p2]; this.h = [h1, h2]; this.V = {}; this.T = {}; this.G = [{}, {}]; this.F = {};
+  }
+  IM.prototype.final = function (s1, s2) { return s1 + s2 === 2 * this.need - 2; };
+  IM.prototype.lim = function (s1, s2) { return this.final(s1, s2) && this.fmt === "tb12" ? 12 : 6; };
+  IM.prototype.adv = function (s1, s2) { return this.final(s1, s2) && this.fmt === "adv"; };
+  IM.prototype.tbto = function (s1, s2) { return this.final(s1, s2) && this.fmt === "tb10" ? 10 : 7; };
+  function setWon(a, b) { return a >= 6 && a - b >= 2 ? 1 : (b >= 6 && b - a >= 2 ? -1 : 0); }
+  function tbSrv(f, n) { return ((n + 1) >> 1) % 2 === 0 ? f : 1 - f; }
+  IM.prototype.game = function (srv, i, j) {           // P(server wins game) from server points i, receiver points j
+    var key = i * 100 + j, G = this.G[srv];
+    if (G[key]) return G[key];
+    var p = this.p[srv], v = new Float64Array(NU), k;
+    if (i >= 4 && i - j >= 2) v.fill(1);
+    else if (j >= 4 && j - i >= 2) v.fill(0);
+    else if (i >= 3 && j >= 3) {
+      for (k = 0; k < NU; k++) { var q = 1 - p[k], D = p[k] * p[k] / (p[k] * p[k] + q * q); v[k] = i === j ? D : (i > j ? p[k] + q * D : p[k] * D); }
+    } else {
+      var a = this.game(srv, i + 1, j), b = this.game(srv, i, j + 1);
+      for (k = 0; k < NU; k++) v[k] = p[k] * a[k] + (1 - p[k]) * b[k];
+    }
+    return (G[key] = v);
+  };
+  IM.prototype.tb = function (x, y, f, to) {           // P(player 1 wins the tiebreak); f = first server of the tiebreak
+    var key = x + "_" + y + "_" + f + "_" + to;
+    if (this.T[key]) return this.T[key];
+    var v = new Float64Array(NU), k, p1 = this.p[0], p2 = this.p[1];
+    if (x >= to && x - y >= 2) v.fill(1);
+    else if (y >= to && y - x >= 2) v.fill(0);
+    else if (x === y && x >= to - 1) { for (k = 0; k < NU; k++) { var w = p1[k] * (1 - p2[k]), l = (1 - p1[k]) * p2[k]; v[k] = w / (w + l); } }
+    else {
+      var s = tbSrv(f, x + y), A = this.tb(x + 1, y, f, to), B = this.tb(x, y + 1, f, to);
+      for (k = 0; k < NU; k++) { var pw = s === 0 ? p1[k] : 1 - p2[k]; v[k] = pw * A[k] + (1 - pw) * B[k]; }
+    }
+    return (this.T[key] = v);
+  };
+  IM.prototype.afterSet = function (s1, s2, srv) {
+    if (s1 === this.need) return vconst(1); if (s2 === this.need) return vconst(0);
+    return this.val(s1, s2, 0, 0, srv);
+  };
+  IM.prototype.afterGame = function (s1, s2, a, b, srv) {
+    var w = setWon(a, b);
+    if (w === 1) return this.afterSet(s1 + 1, s2, srv); if (w === -1) return this.afterSet(s1, s2 + 1, srv);
+    return this.val(s1, s2, a, b, srv);
+  };
+  function mix(g, A, B) { var v = new Float64Array(NU); for (var k = 0; k < NU; k++) v[k] = g[k] * A[k] + (1 - g[k]) * B[k]; return v; }
+  IM.prototype.val = function (s1, s2, a, b, srv) {   // P(player 1 wins match) at the start of a game
+    var key = s1 + "_" + s2 + "_" + a + "_" + b + "_" + srv;
+    if (this.V[key]) return this.V[key];
+    var L = this.lim(s1, s2), v, k, h1 = this.h[0], h2 = this.h[1];
+    if (a === b && a === L && !this.adv(s1, s2)) {
+      v = mix(this.tb(0, 0, srv, this.tbto(s1, s2)), this.afterSet(s1 + 1, s2, 1 - srv), this.afterSet(s1, s2 + 1, 1 - srv));
+    } else if (this.adv(s1, s2) && a === b && a >= 5) {
+      v = new Float64Array(NU); for (k = 0; k < NU; k++) { var w = h1[k] * (1 - h2[k]), l = (1 - h1[k]) * h2[k]; v[k] = w / (w + l); }
+    } else {
+      var g1 = new Float64Array(NU); for (k = 0; k < NU; k++) g1[k] = srv === 0 ? h1[k] : 1 - h2[k];
+      v = mix(g1, this.afterGame(s1, s2, a + 1, b, 1 - srv), this.afterGame(s1, s2, a, b + 1, 1 - srv));
+    }
+    return (this.V[key] = v);
+  };
+  IM.prototype.pointValue = function (s1, s2, a, b, srv, i, j, tbf) {   // before a point; i, j = player 1 / 2 points; tbf = TB first server or null
+    if (tbf !== null) return mix(this.tb(i, j, tbf, this.tbto(s1, s2)), this.afterSet(s1 + 1, s2, 1 - tbf), this.afterSet(s1, s2 + 1, 1 - tbf));
+    var gs = srv === 0 ? this.game(0, i, j) : this.game(1, j, i), g1 = new Float64Array(NU);
+    for (var k = 0; k < NU; k++) g1[k] = srv === 0 ? gs[k] : 1 - gs[k];
+    return mix(g1, this.afterGame(s1, s2, a + 1, b, 1 - srv), this.afterGame(s1, s2, a, b + 1, 1 - srv));
+  };
+  // ---- evidence: log-likelihood over u of the visible score ----
+  IM.prototype.setForward = function (f0, s1, s2, upto) {
+    var F = { "0_0": vconst(1) }, L = this.lim(s1, s2), adv = this.adv(s1, s2), h1 = this.h[0], h2 = this.h[1];
+    for (var n = 0; n < upto; n++) for (var x = 0; x <= n; x++) {
+      var y = n - x, cur = F[x + "_" + y]; if (!cur) continue;
+      if (setWon(x, y) !== 0) continue; if (x === y && x === L && !adv) continue;
+      var srv = n % 2 === 0 ? f0 : 1 - f0, ka = (x + 1) + "_" + y, kb = x + "_" + (y + 1);
+      if (!F[ka]) F[ka] = vconst(0); if (!F[kb]) F[kb] = vconst(0);
+      for (var k = 0; k < NU; k++) { var g1 = srv === 0 ? h1[k] : 1 - h2[k]; F[ka][k] += cur[k] * g1; F[kb][k] += cur[k] * (1 - g1); }
+    }
+    return F;
+  };
+  function vlog(v) { var o = new Float64Array(NU); for (var k = 0; k < NU; k++) o[k] = Math.log(Math.max(v[k], 1e-300)); return o; }
+  IM.prototype.llSet = function (a, b, f0, s1, s2) {    // completed set a-b
+    var L = this.lim(s1, s2), F, k, o = new Float64Array(NU);
+    if (Math.max(a, b) === L + 1 && Math.min(a, b) === L && !this.adv(s1, s2)) {
+      F = this.setForward(f0, s1, s2, 2 * L); var T = this.tb(0, 0, f0, this.tbto(s1, s2)), base = F[L + "_" + L];
+      for (k = 0; k < NU; k++) o[k] = (base ? base[k] : 0) * (a > b ? T[k] : 1 - T[k]);
+      return vlog(o);
+    }
+    F = this.setForward(f0, s1, s2, a + b);
+    var x = a > b ? a - 1 : a, y = a > b ? b : b - 1, srv = (x + y) % 2 === 0 ? f0 : 1 - f0, prev = F[x + "_" + y];
+    for (k = 0; k < NU; k++) { var g1 = srv === 0 ? this.h[0][k] : 1 - this.h[1][k]; o[k] = (prev ? prev[k] : 0) * (a > b ? g1 : 1 - g1); }
+    return vlog(o);
+  };
+  IM.prototype.llPartial = function (a, b, f0, s1, s2) { var F = this.setForward(f0, s1, s2, a + b); return vlog(F[a + "_" + b] || vconst(0)); };
+  IM.prototype.llGamePts = function (srv, i, j) {       // displayed points (deuce = 3-3, AD = 4-3)
+    var si = srv === 0 ? i : j, sj = srv === 0 ? j : i;
+    if (si >= 3 && sj >= 3) { if (si === sj) { si = 3; sj = 3; } else if (si > sj) { si = 4; sj = 3; } else { si = 3; sj = 4; } }
+    var p = this.p[srv], o = new Float64Array(NU);
+    for (var k = 0; k < NU; k++) o[k] = si * Math.log(p[k]) + sj * Math.log(1 - p[k]);
+    return o;
+  };
+  IM.prototype.llTbPts = function (x, y, f) {
+    var F = { "0_0": vconst(1) };
+    for (var n = 0; n < x + y; n++) for (var a = 0; a <= n; a++) {
+      var b = n - a, cur = F[a + "_" + b]; if (!cur) continue;
+      var s = tbSrv(f, n), ka = (a + 1) + "_" + b, kb = a + "_" + (b + 1);
+      if (!F[ka]) F[ka] = vconst(0); if (!F[kb]) F[kb] = vconst(0);
+      for (var k = 0; k < NU; k++) { var pw = s === 0 ? this.p[0][k] : 1 - this.p[1][k]; F[ka][k] += cur[k] * pw; F[kb][k] += cur[k] * (1 - pw); }
+    }
+    return vlog(F[x + "_" + y] || vconst(0));
+  };
+
+  // ---- score state: {sets: [[a, b], ...], g: [x, y], pt: [i, j], srv: 0|1}; scores player 1 first ----
+  function lvRules(bo, fmt, nsets) { var need = (bo >> 1) + 1, fin = nsets === 2 * need - 2; return { need: need, fin: fin, L: fin && fmt === "tb12" ? 12 : 6, adv: fin && fmt === "adv", to: fin && fmt === "tb10" ? 10 : 7 }; }
+  function lvInTb(st, bo, fmt) { var r = lvRules(bo, fmt, st.sets.length); return st.g[0] === r.L && st.g[1] === r.L && !r.adv; }
+  function lvWon(st) { var w = [0, 0]; st.sets.forEach(function (s) { w[s[0] > s[1] ? 0 : 1]++; }); return w; }
+  function lvFirstServers(st, bo, fmt) {       // first server of the match, of each completed set, of the current set, and of a tiebreak in progress
+    var K = 0; st.sets.forEach(function (s) { K += s[0] + s[1]; }); var Kc = K + st.g[0] + st.g[1], tbf = null, fm;
+    if (lvInTb(st, bo, fmt)) { var n = st.pt[0] + st.pt[1]; tbf = ((n + 1) >> 1) % 2 === 0 ? st.srv : 1 - st.srv; fm = Kc % 2 === 0 ? tbf : 1 - tbf; }
+    else fm = Kc % 2 === 0 ? st.srv : 1 - st.srv;
+    var fs = [], G = 0; st.sets.forEach(function (s) { fs.push(G % 2 === 0 ? fm : 1 - fm); G += s[0] + s[1]; });
+    return { fm: fm, fs: fs, fc: G % 2 === 0 ? fm : 1 - fm, tbf: tbf };
+  }
+  function lvAdvance(st, w, bo, fmt) {          // add one point won by w (0/1); returns a new state
+    var s = { sets: st.sets.map(function (x) { return x.slice(); }), g: st.g.slice(), pt: st.pt.slice(), srv: st.srv,
+              base: st.base ? { sets: st.base.sets.map(function (x) { return x.slice(); }), g: st.base.g.slice() } : { sets: [], g: [0, 0] },
+              trk: st.trk ? st.trk.slice() : [0, 0, 0, 0], unt: !!st.unt };
+    if (!s.unt) s.trk[2 * s.srv + (w === s.srv ? 0 : 1)]++;     // tracked point: [p1 serve won, lost, p2 serve won, lost]
+    var gBefore = s.g[0] + s.g[1], setsBefore = s.sets.length;
+    var r = lvRules(bo, fmt, s.sets.length), done = false, nsrv;
+    if (lvInTb(s, bo, fmt)) {
+      var n = s.pt[0] + s.pt[1], tbf = ((n + 1) >> 1) % 2 === 0 ? s.srv : 1 - s.srv;
+      s.pt[w]++;
+      if (s.pt[w] >= r.to && s.pt[w] - s.pt[1 - w] >= 2) { s.g[w]++; done = true; nsrv = 1 - tbf; }
+      else s.srv = tbSrv(tbf, n + 1);
+    } else {
+      s.pt[w]++;
+      if (s.pt[w] >= 4 && s.pt[w] - s.pt[1 - w] >= 2) {
+        s.g[w]++; s.pt = [0, 0]; s.srv = 1 - s.srv;
+        if (setWon(s.g[0], s.g[1]) !== 0) { done = true; nsrv = s.srv; }
+      } else if (s.pt[0] >= 3 && s.pt[1] >= 3) { var m = Math.min(s.pt[0], s.pt[1]) - 3; s.pt[0] -= m; s.pt[1] -= m; }
+    }
+    if (done) { s.sets.push(s.g.slice()); s.g = [0, 0]; s.pt = [0, 0]; s.srv = nsrv; }
+    if (s.unt && (s.sets.length !== setsBefore || s.g[0] + s.g[1] !== gBefore)) {   // the typed game is over: track from the next game on
+      s.unt = false; s.base = { sets: s.sets.map(function (x) { return x.slice(); }), g: s.g.slice() };
+    }
+    return s;
+  }
+  var PTS = ["0", "15", "30", "40", "AD"];
+  function lvText(st, bo, fmt) {
+    var parts = st.sets.map(function (s) { return s[0] + "-" + s[1]; }), won = lvWon(st), need = (bo >> 1) + 1;
+    if (won[0] === need || won[1] === need) return parts.join(" ");
+    parts.push(st.g[0] + "-" + st.g[1]);
+    if (st.pt[0] || st.pt[1]) {
+      if (lvInTb(st, bo, fmt)) parts.push(st.pt[0] + "-" + st.pt[1]);
+      else { var a = st.pt[0], b = st.pt[1]; parts.push(a >= 3 && b >= 3 ? (a === b ? "40-40" : (a > b ? "AD-40" : "40-AD")) : PTS[a] + "-" + PTS[b]); }
+    }
+    return parts.join(" ");
+  }
+  function lvParse(txt, bo, fmt, srv) {         // -> {st} or {err}
+    var toks = txt.replace(/\(\d+\)/g, "").trim().split(/[\s,;]+/).filter(Boolean), st = { sets: [], g: [0, 0], pt: [0, 0], srv: srv }, need = (bo >> 1) + 1;
+    var stage = 0;                               // 0: sets, 1: after current-set games, 2: after points
+    for (var t = 0; t < toks.length; t++) {
+      var m = toks[t].toUpperCase().match(/^(\d+|AD|A)[-–:](\d+|AD|A)$/);
+      if (!m) return { err: "Couldn’t read “" + toks[t] + "”. Write each score as 6-4, points as 30-15 or AD-40." };
+      var won = lvWon(st);
+      if (won[0] === need || won[1] === need) return { err: "The match is already over after " + st.sets.map(function (s) { return s.join("-"); }).join(" ") + "." };
+      var r = lvRules(bo, fmt, st.sets.length);
+      if (stage === 0) {
+        var a = +m[1], b = +m[2]; if (isNaN(a) || isNaN(b)) return { err: "“" + toks[t] + "” looks like points; enter the games of the current set first (e.g. 2-1 30-15)." };
+        var hi2 = Math.max(a, b), lo2 = Math.min(a, b), df = hi2 - lo2;
+        // completed: winner has 6+ and leads by 2 (exactly 2 beyond 6 games), or won the tiebreak (L+1 to L)
+        var fin = (hi2 >= 6 && df >= 2 && (hi2 === 6 || df === 2) && (r.adv || hi2 <= r.L + 1)) || (!r.adv && hi2 === r.L + 1 && lo2 === r.L);
+        if (fin) { st.sets.push([a, b]); continue; }
+        var ok = !(hi2 >= 6 && df >= 2) && (r.adv || hi2 <= r.L);
+        if (!ok) return { err: "“" + toks[t] + "” isn’t a possible set score here." };
+        st.g = [a, b]; stage = 1; continue;
+      }
+      if (stage === 1) {
+        if (lvInTb(st, bo, fmt)) {
+          var x = +m[1], y = +m[2]; if (isNaN(x) || isNaN(y)) return { err: "In a tiebreak, enter points as numbers, e.g. 6-6 4-3." };
+          if ((x >= r.to || y >= r.to) && Math.abs(x - y) >= 2) return { err: "That tiebreak is already over: enter the set as " + (x > y ? (r.L + 1) + "-" + r.L : r.L + "-" + (r.L + 1)) + "." };
+          if (Math.abs(x - y) > 2 && Math.max(x, y) > r.to) return { err: "“" + toks[t] + "” isn’t a possible tiebreak score." };
+          st.pt = [x, y];
+        } else {
+          var map = { "0": 0, "15": 1, "30": 2, "40": 3, "AD": 4, "A": 4 }, i = map[m[1]], j = map[m[2]];
+          if (i === undefined || j === undefined) return { err: "Points are 0, 15, 30, 40 or AD (e.g. 30-15, AD-40)." };
+          if ((i === 4 && j !== 3) || (j === 4 && i !== 3)) return { err: "AD only comes after deuce: AD-40 or 40-AD." };
+          st.pt = [i, j];
+        }
+        stage = 2; continue;
+      }
+      return { err: "Too many scores: sets, then current-set games, then points." };
+    }
+    st.base = { sets: st.sets.map(function (x) { return x.slice(); }), g: st.g.slice() }; st.trk = [0, 0, 0, 0]; st.unt = st.pt[0] + st.pt[1] > 0;
+    return { st: st };
+  }
+  function lvEval(R, st, bo, fmt, tau) {        // live probability for player 1 (completed match)
+    var M = new IM(logit(R.ha), logit(R.hb), bo, fmt), p0 = R.pDone, k;
+    var v0a = M.val(0, 0, 0, 0, 0), v0b = M.val(0, 0, 0, 0, 1), v0 = new Float64Array(NU);
+    for (k = 0; k < NU; k++) v0[k] = 0.5 * (v0a[k] + v0b[k]);
+    var won = lvWon(st), need = (bo >> 1) + 1;
+    if (won[0] === need) return { over: 1 }; if (won[1] === need) return { over: 2 };
+    var fs = lvFirstServers(st, bo, fmt), tb = lvInTb(st, bo, fmt);
+    var V = M.pointValue(won[0], won[1], st.g[0], st.g[1], st.srv, st.pt[0], st.pt[1], tb ? fs.tbf : null);
+    // form: prior N(d, tau^2) with d chosen so the prior reproduces the pre-match chance, updated by the score
+    var lo = -2, hi = 2, d = 0;
+    for (var it = 0; it < 40; it++) { d = (lo + hi) / 2; var sw = 0, sv = 0; for (k = 0; k < NU; k++) { var w = Math.exp(-0.5 * Math.pow((UG[k] - d) / tau, 2)); sw += w; sv += w * v0[k]; } if (sv / sw < p0) lo = d; else hi = d; }
+    var L = new Float64Array(NU); for (k = 0; k < NU; k++) L[k] = -0.5 * Math.pow((UG[k] - d) / tau, 2);
+    // the score alone: same prior, no evidence (so "form on the day" is exactly what the games played add)
+    var pw0 = 0, pv0 = 0; for (k = 0; k < NU; k++) { var w0 = Math.exp(L[k]); pw0 += w0; pv0 += w0 * V[k]; }
+    var pStatic = pv0 / pw0;
+    // evidence about form: the typed scoreboard (completed sets + games), plus every point stepped through with the buttons
+    var base = st.base || { sets: st.sets, g: st.g }, trk = st.trk || [0, 0, 0, 0];
+    var s1 = 0, s2 = 0, Es = new Float64Array(NU);
+    base.sets.forEach(function (s, i) { var l = M.llSet(s[0], s[1], fs.fs[i], s1, s2); for (var q = 0; q < NU; q++) Es[q] += l[q]; if (s[0] > s[1]) s1++; else s2++; });
+    var bi = base.sets.length, bf = bi < st.sets.length ? fs.fs[bi] : fs.fc;
+    var lp = M.llPartial(base.g[0], base.g[1], bf, s1, s2), Lsb = new Float64Array(NU), mx = -Infinity;
+    for (k = 0; k < NU; k++) {
+      var p1 = M.p[0][k], p2 = M.p[1][k];
+      Lsb[k] = L[k] + Es[k] + lp[k] + trk[0] * Math.log(p1) + trk[1] * Math.log(1 - p1) + trk[2] * Math.log(p2) + trk[3] * Math.log(1 - p2);
+      if (Lsb[k] > mx) mx = Lsb[k];
+    }
+    var Wsb = new Float64Array(NU), W = 0, U1 = 0, U2 = 0;
+    for (k = 0; k < NU; k++) { Wsb[k] = Math.exp(Lsb[k] - mx); W += Wsb[k]; U1 += Wsb[k] * UG[k]; U2 += Wsb[k] * UG[k] * UG[k]; }
+    var P = 0, i0 = st.pt[0], j0 = st.pt[1];
+    if (i0 + j0 === 0 || !st.unt) { for (k = 0; k < NU; k++) P += Wsb[k] * V[k]; P /= W; }
+    else {
+      // typed score inside a game or tiebreak: the points set the chance to win it (exact chain); each outcome leads to a scoreboard
+      // with its own form update (so a typed 40-0 never rates above the 1-0 it leads to). Here base = current scoreboard and nothing is tracked.
+      var P1g;
+      if (tb) P1g = M.tb(i0, j0, fs.tbf, M.tbto(s1, s2));
+      else { var gs = st.srv === 0 ? M.game(0, i0, j0) : M.game(1, j0, i0); P1g = new Float64Array(NU); for (k = 0; k < NU; k++) P1g[k] = st.srv === 0 ? gs[k] : 1 - gs[k]; }
+      var pA = 0; for (k = 0; k < NU; k++) pA += Wsb[k] * P1g[k]; pA /= W;
+      var Px = [0, 1].map(function (w) {
+        var ng = st.g.slice(); ng[w]++;
+        var nsrv = tb ? 1 - fs.tbf : 1 - st.srv, done = tb || setWon(ng[0], ng[1]) !== 0, ev, Vx;
+        if (done) {
+          ev = M.llSet(ng[0], ng[1], fs.fc, s1, s2);
+          Vx = ng[0] > ng[1] ? M.afterSet(s1 + 1, s2, nsrv) : M.afterSet(s1, s2 + 1, nsrv);
+        } else { ev = M.llPartial(ng[0], ng[1], fs.fc, s1, s2); Vx = M.val(s1, s2, ng[0], ng[1], nsrv); }
+        var mm = -Infinity, Lx = new Float64Array(NU), q;
+        for (q = 0; q < NU; q++) { Lx[q] = L[q] + Es[q] + ev[q]; if (Lx[q] > mm) mm = Lx[q]; }
+        var sw = 0, sv = 0; for (q = 0; q < NU; q++) { var ww = Math.exp(Lx[q] - mm); sw += ww; sv += ww * Vx[q]; }
+        return sv / sw;
+      });
+      P = pA * Px[0] + (1 - pA) * Px[1];
+    }
+    var um = U1 / W, usd = Math.sqrt(Math.max(U2 / W - um * um, 0));
+    return { trk: trk, p: clamp(P, 1e-6, 1 - 1e-6), pStatic: clamp(pStatic, 1e-6, 1 - 1e-6), p0: p0, form: um - d, formSd: usd, d: d, srv1: sig(logit(R.ha) + d), srv2: sig(logit(R.hb) - d),
+             srv1t: sig(logit(R.ha) + um), srv2t: sig(logit(R.hb) - um) };
+  }
+
   // ---------------- data loading ----------------
   var cache = {};
   function load(name) {
@@ -462,7 +722,7 @@
       document.getElementById("odBar").style.width = "50%";
       document.getElementById("odFairA").textContent = ""; document.getElementById("odFairB").textContent = "";
       brk.innerHTML = '<tr><td class="d">Choose two different players from the list (active in the past year, 30+ matches).</td></tr>'; sets.innerHTML = "";
-      return;
+      renderLive(null, null, null); return;
     }
     var o = { surf: od.surf, indoor: od.indoor && od.surf === "Hard", lvl: od.lvl, bo: od.bo, speed: C.speed_range[1] > C.speed_range[0] ? od.speed : 0 };
     var R = compute(D, A, B, o), p = R.p;
@@ -517,6 +777,111 @@
     document.getElementById("odNote").innerHTML = "Ratings as of " + fmtDate(C.asof) + ". " +
       "The headline is the chance to <em>advance</em>: retirements and walkovers (about 3% of matches, close to coin flips) are included; the breakdown also gives the chance if the match is completed. The chain: each player's serve rating against the other's return rating on that surface gives the chance to win a point on serve → service holds → sets, with tiebreaks played point by point (plus closing) → match → calibration, then head-to-head and the validated corrections. " + neutral +
       " Scorelines assume each set is an independent draw at the same per-set chance, so the upset scorelines are slightly understated.";
+    renderLive(R, A, B);
+  }
+
+  // ---------------- live (in-match) card ----------------
+  var lv = { st: { sets: [], g: [0, 0], pt: [0, 0], srv: 0, base: { sets: [], g: [0, 0] }, trk: [0, 0, 0, 0], unt: false }, hist: [], fmtUser: false, R: null, A: null, B: null, k: 1 };
+  segBind("lvForm", "k", function (v) { lv.k = +v; renderLive(); });
+  var lvScore = document.getElementById("lvScore"), lvFinal = document.getElementById("lvFinal"), lvMsg = document.getElementById("lvMsg");
+  function lvFmt() { return lv.fmtUser ? lvFinal.value : (od.lvl === "G" ? "tb10" : "tb7"); }
+  var setLvSrv = segBind("lvSrv", "srv", function (v) {
+    var st = lv.st; st.srv = +v; lv.hist = [];
+    st.base = { sets: st.sets.map(function (x) { return x.slice(); }), g: st.g.slice() }; st.trk = [0, 0, 0, 0]; st.unt = st.pt[0] + st.pt[1] > 0;   // server changed by hand: start over from this scoreboard
+    renderLive();
+  });
+  function lvSetState(st, keepText) { lv.st = st; setLvSrv(st.srv); if (!keepText) lvScore.value = lvText(st, od.bo, lvFmt()); }
+  lvScore.addEventListener("input", function () {
+    var r = lvParse(lvScore.value, od.bo, lvFmt(), lv.st.srv);
+    if (r.err) { lvMsg.textContent = r.err; lvMsg.className = "lv-msg err"; return; }
+    lv.hist = []; lvSetState(r.st, true); renderLive();
+  });
+  lvFinal.addEventListener("change", function () { lv.fmtUser = true; lvReparse(); renderLive(); });
+  function lvPoint(w) {
+    var won = lvWon(lv.st), need = (od.bo >> 1) + 1; if (won[0] === need || won[1] === need) return;
+    lv.hist.push(lv.st); lvSetState(lvAdvance(lv.st, w, od.bo, lvFmt())); renderLive();
+  }
+  document.getElementById("lvPtA").addEventListener("click", function () { lvPoint(0); });
+  document.getElementById("lvPtB").addEventListener("click", function () { lvPoint(1); });
+  document.getElementById("lvUndo").addEventListener("click", function () { if (lv.hist.length) { lvSetState(lv.hist.pop()); renderLive(); } });
+  document.getElementById("lvClear").addEventListener("click", function () { lv.hist = []; lvSetState({ sets: [], g: [0, 0], pt: [0, 0], srv: lv.st.srv, base: { sets: [], g: [0, 0] }, trk: [0, 0, 0, 0], unt: false }); lvScore.value = ""; renderLive(); });
+  function lvReparse() {                        // best of / deciding-set format changed: re-read the typed score
+    if (lvScore.value === lvText(lv.st, od.bo, lvFmt()) || (!lvScore.value.trim() && !lv.st.sets.length && !lv.st.g[0] && !lv.st.g[1] && !lv.st.pt[0] && !lv.st.pt[1])) return;   // unchanged: keep the point history
+    if (!lvScore.value.trim()) { lv.st = { sets: [], g: [0, 0], pt: [0, 0], srv: lv.st.srv, base: { sets: [], g: [0, 0] }, trk: [0, 0, 0, 0], unt: false }; return; }
+    var r = lvParse(lvScore.value, od.bo, lvFmt(), lv.st.srv);
+    if (!r.err) lv.st = r.st;
+  }
+
+  function renderLive(R, A, B) {
+    if (R !== undefined) { lv.R = R; lv.A = A; lv.B = B; lvReparse(); }
+    R = lv.R; A = lv.A; B = lv.B;
+    if (!lv.fmtUser) lvFinal.value = lvFmt();
+    var bo = od.bo, fmt = lvFmt(), card = document.getElementById("odLive");
+    var sa = A ? A.n.split(" ").slice(-1)[0] : "Player 1", sb = B ? B.n.split(" ").slice(-1)[0] : "Player 2";
+    document.getElementById("lvSrvA").textContent = sa; document.getElementById("lvSrvB").textContent = sb;
+    document.getElementById("lvPtA").textContent = "Point " + sa; document.getElementById("lvPtB").textContent = "Point " + sb;
+    document.getElementById("lvUndo").disabled = !lv.hist.length;
+    var check = lvParse(lvScore.value, bo, fmt, lv.st.srv);
+    if (check.err && lvScore.value.trim()) { lvMsg.textContent = check.err; lvMsg.className = "lv-msg err"; }
+    else { lvMsg.className = "lv-msg"; lvMsg.textContent = lvScore.value.trim() ? "" : "Empty = start of the match (0–0)."; }
+    if (!R) { card.classList.add("dim"); return; }
+    card.classList.remove("dim");
+    var st = lv.st, tb = lvInTb(st, bo, fmt), won = lvWon(st), need = (bo >> 1) + 1, over = won[0] === need || won[1] === need;
+    ["lvPtA", "lvPtB"].forEach(function (id) { document.getElementById(id).disabled = over; });
+    // scoreboard
+    var cols = st.sets.length + (over ? 0 : 1), html = "";
+    [0, 1].forEach(function (s) {
+      var nm = s === 0 ? A.n : B.n, row = '<tr><td class="n">' + esc(nm) + (!over && st.srv === s ? '<span class="dot" title="serving"></span>' : "") + "</td>";
+      st.sets.forEach(function (x) { row += '<td class="' + (x[s] > x[1 - s] ? "w" : "") + '">' + x[s] + "</td>"; });
+      if (!over) {
+        row += '<td class="cur">' + st.g[s] + "</td>";
+        var a = st.pt[0], b = st.pt[1], ptxt;
+        if (tb) ptxt = String(st.pt[s]);
+        else if (a >= 3 && b >= 3) ptxt = a === b ? "40" : ((s === 0) === (a > b) ? "AD" : "40");
+        else ptxt = PTS[st.pt[s]];
+        row += '<td class="pt">' + ptxt + "</td>";
+      }
+      html += row + "</tr>";
+    });
+    document.getElementById("lvBoard").innerHTML = html;
+    document.getElementById("lvNameA").textContent = A.n; document.getElementById("lvNameB").textContent = B.n;
+    var tau = IM_TAU[od.tour] || 0.2;
+    function ev(x) { var e = lvEval(R, x, bo, fmt, tau); if (!e.over) e.p = e.pStatic + lv.k * (e.p - e.pStatic); return e; }   // Half / Off scale the form part
+    var E = ev(st);
+    var brk = document.getElementById("lvBreak"), nxt = document.getElementById("lvNext");
+    if (E.over) {
+      var wn = E.over === 1 ? A.n : B.n;
+      document.getElementById("lvPA").textContent = E.over === 1 ? "100%" : "0%"; document.getElementById("lvPB").textContent = E.over === 1 ? "0%" : "100%";
+      document.getElementById("lvBar").style.width = E.over === 1 ? "100%" : "0%";
+      brk.innerHTML = '<tr><td class="d">Match over: ' + esc(wn) + " won " + st.sets.map(function (x) { return x.join("–"); }).join(" ") + ".</td></tr>";
+      nxt.innerHTML = ""; return;
+    }
+    var p = E.p;
+    document.getElementById("lvPA").textContent = (p * 100).toFixed(1) + "%"; document.getElementById("lvPB").textContent = ((1 - p) * 100).toFixed(1) + "%";
+    document.getElementById("lvBar").style.width = (p * 100).toFixed(2) + "%";
+    function pp(x) { return (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(1) + " pp"; }
+    function bar(d) { var w = Math.min(Math.abs(d) * 100 / 30, 1) * 45; return '<span class="effbar"><i class="' + (d < 0 ? "neg" : "") + '" style="' + (d >= 0 ? "left:50%" : "right:50%") + ";width:" + w.toFixed(1) + '%"></i></span>'; }
+    var f1 = (E.srv1t - E.srv1) * 100, f2 = (E.srv2t - E.srv2) * 100, started = st.sets.length || st.g[0] || st.g[1] || st.pt[0] || st.pt[1];
+    var tr = E.trk || [0, 0, 0, 0], trTxt = tr[0] + tr[1] + tr[2] + tr[3] > 0 ? " · from the points stepped through: " + sa + " won " + tr[0] + " of " + (tr[0] + tr[1]) + " on serve, " + sb + " " + tr[2] + " of " + (tr[2] + tr[3]) : "";
+    var formTxt = lv.k === 0 ? "switched off" : !started ? "nothing played yet" : (lv.k < 1 ? "at half strength; " : "") +
+      "estimated from the score: " + sa + " wins " + (E.srv1t * 100).toFixed(1) + "% of points on serve (" + (E.srv1 * 100).toFixed(1) + "% expected before the match), " +
+      sb + " " + (E.srv2t * 100).toFixed(1) + "% (" + (E.srv2 * 100).toFixed(1) + "%)" + trTxt;
+    brk.innerHTML =
+      "<tr><td><strong>Before the match</strong><div class=\"d\">chance if completed (the headline above also counts retirements)</div></td><td></td><td class=\"v\">" + (E.p0 * 100).toFixed(1) + "%</td></tr>" +
+      "<tr><td><strong>The score</strong><div class=\"d\">exact chance from here if both play at their pre-match level</div></td><td>" + bar(E.pStatic - E.p0) + '</td><td class="v">' + pp(E.pStatic - E.p0) + "</td></tr>" +
+      "<tr><td><strong>Form on the day</strong><div class=\"d\">" + esc(formTxt) + "</div></td><td>" + bar(p - E.pStatic) + '</td><td class="v">' + pp(p - E.pStatic) + "</td></tr>" +
+      '<tr class="tot"><td>' + esc(A.n) + ' wins</td><td></td><td class="v">' + (p * 100).toFixed(1) + "%</td></tr>";
+    var nA = ev(lvAdvance(st, 0, bo, fmt)), nB = ev(lvAdvance(st, 1, bo, fmt));
+    function pv(e) { return e.over ? (e.over === 1 ? 100 : 0).toFixed(1) + "%" : (e.p * 100).toFixed(1) + "%"; }
+    var server = tb ? (st.srv === 0 ? sa : sb) : (st.srv === 0 ? sa : sb);
+    nxt.innerHTML = "<div>If " + esc(sa) + " wins it<b>" + pv(nA) + "</b></div><div>If " + esc(sb) + " wins it<b>" + pv(nB) + "</b></div>";
+    document.getElementById("lvNote").innerHTML = "<strong>" + esc(server) + " is serving.</strong> " +
+      "The live chance plays out the rest of the match exactly, point by point, from this score (games, tiebreaks and the deciding-set format), with each player's chance to win a point on serve from the ratings. " +
+      "The score also says something about how well both are playing today, so the model updates that: before the match it allows for a typical day-to-day swing in form. Points you step through with the buttons all count (a love hold says more than a hold from deuce); for a typed score only the completed sets and games are known, and inside a typed game the points decide the chance to win that game, whose result then updates the form. " +
+      "Tested on 9,500 point-by-point charted matches (Match Charting Project), this form update clearly beats keeping strength fixed: with fixed strength, a favourite broken early or a set down is rated far too high. " +
+      "Its speed is fitted on those matches. In typical situations it lands within 2 points of what actually happened (favourites broken in the first game won 61% for men, 61.5% predicted; 64% for women, 61% predicted). <em>Half</em> and <em>Off</em> scale the form part down if you want to see how much of the swing it explains. " +
+      "There is no separate momentum term: recent sets were no more telling than earlier ones, and having just won a set added nothing beyond what the score already says about form. " +
+      "Shown as the chance to win if the match is completed.";
   }
 
   // ---------------- player profile tab ----------------
