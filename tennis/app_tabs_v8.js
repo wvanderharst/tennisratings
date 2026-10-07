@@ -696,6 +696,7 @@
 
   function findP(D, name) { return D.byName[(name || "").trim().toLowerCase()]; }
 
+  var RET_RISK = 0.03;                           // share of matches that ends early (retirement or walkover)
   function compute(D, A, B, o) {
     var C = D.const, si = SURF.indexOf(o.surf);
     var both = A.ns[si] >= 1 && B.ns[si] >= 1, pool = D.fill_pool && D.fill_pool[o.surf];
@@ -736,7 +737,8 @@
     ];
     var z = parts.reduce(function (s, p) { return s + p.z; }, 0), pDone = sig(z);
     // about 3% of matches end in a retirement or walkover, and then strength barely counts: the chance to ADVANCE
-    var R = C.ret || { r_slam: 0, b_slam: 0, r_other: 0, b_other: 0 }, rr = o.lvl === "G" ? R.r_slam : R.r_other, bb = o.lvl === "G" ? R.b_slam : R.b_other;
+    // the share is fixed at RET_RISK (3%) for every match; the slope stays as fitted (C.ret)
+    var R = C.ret || { r_slam: 0, b_slam: 0, r_other: 0, b_other: 0 }, rr = RET_RISK, bb = o.lvl === "G" ? R.b_slam : R.b_other;
     var pAdv = clamp((1 - rr) * pDone + rr * sig(bb * z), 1e-9, 1 - 1e-9);
     parts.push({ k: "ret", z: logit(pAdv) - z });
     return { p: pAdv, pDone: pDone, z: logit(pAdv), parts: parts, useS: both || !!pool, rec: rec, fast: fast, si: si, ea: ea, eb: eb, ha: ha, hb: hb, rr: rr, bb: bb };
@@ -810,7 +812,7 @@
       ? "Court speed shifts the odds through the two players' <strong>ace skill</strong> (how many more aces than average they hit): a faster court helps the bigger server. The zero point is an average court of that surface; tournament presets use each event's measured speed over the last three seasons."
       : "Court speed shifts the odds through the two players' <strong>ace skill</strong>, as for the men (the weight came out almost identical when refit on WTA matches). The zero point is an average court of that surface; tournament presets use each event's measured speed over the last three seasons.";
     document.getElementById("odNote").innerHTML = "Ratings as of " + fmtDate(C.asof) + ". " +
-      "The headline is the chance to <em>advance</em>: retirements and walkovers (about 3% of matches, close to coin flips) are included; the breakdown also gives the chance if the match is completed. The chain: each player's serve rating against the other's return rating on that surface gives the chance to win a point on serve → service holds → sets, with tiebreaks played point by point (plus closing) → match → calibration, then head-to-head and the validated corrections. " + neutral +
+      "The headline is the chance to <em>advance</em>: retirements and walkovers (taken as 3% of matches, close to coin flips) are included; the breakdown also gives the chance if the match is completed. The chain: each player's serve rating against the other's return rating on that surface gives the chance to win a point on serve → service holds → sets, with tiebreaks played point by point (plus closing) → match → calibration, then head-to-head and the validated corrections. " + neutral +
       " Scorelines assume each set is an independent draw at the same per-set chance, so the upset scorelines are slightly understated.";
     renderLive(R, A, B);
   }
