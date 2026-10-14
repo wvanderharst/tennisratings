@@ -85,7 +85,7 @@ orank = lambda r, won: r["rank_b"] if won else r["rank_a"]     # opponent's offi
 # how much the win chance moves per unit of level gap (logit scale), for the profile's performance rating
 _x = np.array([pre[i][EXT[i]["a"]][0] - pre[i][EXT[i]["b"]][0] for i in RIDX]); _y = np.log(pa_all[RIDX] / (1 - pa_all[RIDX]))
 SLOPE = float(np.cov(_x, _y)[0, 1] / np.var(_x, ddof=1))
-recs = defaultdict(list); nrated = defaultdict(int)
+recs = defaultdict(list); nrated = defaultdict(int); myrank = {}   # own official ranking per match row (best list only)
 for r in allrows:
     i = WHERE.get(id(r))
     for me, op, won in ((r["a"], r["b"], 1), (r["b"], r["a"], 0)):
@@ -105,6 +105,7 @@ for r in allrows:
                                 R3(o0[0]), R3(spct * 100) if spct is not None else None, R3(rpct * 100) if rpct is not None else None, 2 if uo else 1, orank(r, won),
                                 *((R3(b0[0] + perf[(i, 1 - won)][0]), round(perf[(i, 1 - won)][1], 2), round(perf[(i, 1 - won)][2], 2))
                                   if (i, 1 - won) in perf else (None, None, None))])
+        myrank[id(recs[me][-1])] = r["rank_a"] if won else r["rank_b"]
 players = [p for p in recs if nrated[p] >= 10]
 bucket = lambda p: zlib.crc32(p.encode()) % NB
 index = []
@@ -116,9 +117,15 @@ D = f"{SCR}/site_v8"
 # tour-level main draws only: against Challenger/qualifying/Davis-Fed Cup mismatches a near-perfect score is almost expected
 # and the performance shoots up without saying much; for the same reason both players must be rated at least 0.4 going in
 tour_main = lambda r: r[2] not in ("C", "D", "Q", "S") and not (r[4] or "").startswith("Q")
-best = sorted(((p, r) for p in recs for r in recs[p] if r[19] is not None and tour_main(r) and min(r[9], r[14]) >= 0.4), key=lambda pr: -pr[1][19])[:100]
-json.dump([[p] + [r[k] for k in (0, 1, 2, 3, 4, 5, 6, 7, 19, 9, 14, 15, 16)] for p, r in best],
-          open(f"{SCR}/site_v8/best_{TOUR}.json", "w"), separators=(",", ":"))    # player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%
+# the point stats must fit the result (a few source rows have them swapped, e.g. a loser winning 70% of the points)
+fits = lambda r: r[15] is not None and r[16] is not None and ((r[15] + r[16]) / 2 > 45 if r[6] else (r[15] + r[16]) / 2 < 55)
+cand = sorted(((p, r) for p in recs for r in recs[p] if r[19] is not None and tour_main(r) and fits(r)), key=lambda pr: -pr[1][19])
+row = lambda p, r: [p] + [r[k] for k in (0, 1, 2, 3, 4, 5, 6, 7, 19, 9, 14, 15, 16)] + [myrank.get(id(r)), r[18]]
+top = lambda k: k is not None and k <= 20
+json.dump(dict(all=[row(p, r) for p, r in cand if min(r[9], r[14]) >= 0.4][:100],              # both rated at least 0.4 going in
+               top20=[row(p, r) for p, r in cand if top(myrank.get(id(r))) and top(r[18])][:100]),  # both in the official top 20
+          open(f"{SCR}/site_v8/best_{TOUR}.json", "w"), separators=(",", ":"))
+# rows: player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%, rank, opp rank
 json.dump(dict(tour=TOUR, lam=LAM, slope=round(SLOPE, 4), players=index), open(f"{D}/prof_{TOUR}_index.json", "w"), separators=(",", ":"))
 tot = 0
 for k in range(NB):

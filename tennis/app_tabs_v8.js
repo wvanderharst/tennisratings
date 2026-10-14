@@ -621,24 +621,26 @@
   }
 
   // ---------------- best performances tab ----------------
-  var bp = { tour: "atp" }, bpTable = document.getElementById("bpTable");
+  var bp = { tour: "atp", sel: "all" }, bpTable = document.getElementById("bpTable");
   segBind("bpTour", "tour", function (v) { bp.tour = v; renderBest(); });
+  segBind("bpSel", "sel", function (v) { bp.sel = v; renderBest(); });
   function renderBest() {
     bpTable.innerHTML = '<tr><td class="loading" style="text-align:center">Loading&hellip;</td></tr>';
-    var tour = bp.tour;
-    load("best_" + tour + ".json").then(function (rows) {
-      if (bp.tour !== tour) return;
+    var tour = bp.tour, sel = bp.sel;
+    load("best_" + tour + ".json").then(function (D) {
+      if (bp.tour !== tour || bp.sel !== sel) return;
+      var rows = D[sel] || [], rk = function (k) { return k == null ? "" : ' <span style="opacity:0.55;font-size:0.85em">#' + k + "</span>"; };
       var RN = { F: "Final", SF: "Semi", QF: "Quarter", RR: "Round robin" };
       var head = "<thead><tr>" + [["#", "l"], ["Player", "l"], ["Performance \u2193", ""], ["Above rating", ""], ["Date", ""], ["Tournament", "l"], ["Round", "l"],
         ["Surface", "l"], ["Opponent", "l"], ["Opp. rating", ""], ["Result", "l"], ["Serve pts", ""], ["Return pts", ""]].map(function (c) {
           return '<th class="' + c[1] + (c[0].indexOf("\u2193") >= 0 ? " sorted" : "") + '"><button tabindex="-1">' + c[0] + "</button></th>";
         }).join("") + "</tr></thead>";
-      var body = rows.map(function (r, i) {     // [player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%]
+      var body = rows.map(function (r, i) {     // [player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%, rank, opp rank]
         var sc = r[7] ? r[8] : r[8].split(" ").map(function (t) { var m = /^(\d+)-(\d+)(\(\d+\))?$/.exec(t); return m ? m[2] + "-" + m[1] + (m[3] || "") : t; }).join(" ");
-        return "<tr><td class=\"pos l\">" + (i + 1) + '</td><td class="l"><span class="pname link" data-n="' + esc(r[0]) + '">' + esc(r[0]) + "</span></td>" +
+        return "<tr><td class=\"pos l\">" + (i + 1) + '</td><td class="l"><span class="pname link" data-n="' + esc(r[0]) + '">' + esc(r[0]) + "</span>" + rk(r[14]) + "</td>" +
           '<td class="num" style="font-weight:700">' + r[9].toFixed(2) + '</td><td class="num">+' + (r[9] - r[10]).toFixed(2) + "</td>" +
           '<td class="num">' + fmtDate(r[1]) + '</td><td class="l">' + esc(r[2]) + '</td><td class="l">' + (RN[r[5]] || r[5]) + '</td><td class="l">' + (r[4] || "\u2013") + "</td>" +
-          '<td class="l"><span class="pname link" data-n="' + esc(r[6]) + '">' + esc(r[6]) + '</span></td><td class="num">' + (r[11] == null ? "\u2013" : r[11].toFixed(2)) + "</td>" +
+          '<td class="l"><span class="pname link" data-n="' + esc(r[6]) + '">' + esc(r[6]) + "</span>" + rk(r[15]) + '</td><td class="num">' + (r[11] == null ? "\u2013" : r[11].toFixed(2)) + "</td>" +
           '<td class="l"><span class="res" style="color:' + (r[7] ? "var(--wm)" : "var(--accent)") + '">' + (r[7] ? "W" : "L") + "</span> " + esc(sc) + "</td>" +
           '<td class="num">' + (r[12] == null ? "\u2013" : r[12].toFixed(0) + "%") + '</td><td class="num">' + (r[13] == null ? "\u2013" : r[13].toFixed(0) + "%") + "</td></tr>";
       }).join("");
