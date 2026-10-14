@@ -4,7 +4,7 @@ what the match did to the ratings.   python3 build_profiles.py atp|wta
 Writes site_v8/prof_{tour}_index.json  ([name, bucket, rated matches, last date, current level] per player)
    and site_v8/prof_{tour}_{k}.json    (players in bucket k -> list of matches, newest last)
 Match row: [date, tournament, level, surface, round, opponent, won, score, win_chance, level_before, d_level, d_serve,
-            d_return, d_surface, opp_level, serve_pts_won_pct, return_pts_won_pct, rated]
+            d_return, d_surface, opp_level, serve_pts_won_pct, return_pts_won_pct, rated, opp_rank]
 Ratings in the model's units (level = (serve + return) / 2; surface = level on that surface = general + gap)."""
 import paths as P
 import json, sys, math, zlib
@@ -58,13 +58,17 @@ zf = F @ minimize(g, w0, jac=True, method="L-BFGS-B").x
 pa_all = np.full(len(EXT), np.nan); pa_all[RIDX] = 1 / (1 + np.exp(-zf))
 
 R3 = lambda x: round(float(x), 3)
+orank = lambda r, won: r["rank_b"] if won else r["rank_a"]     # opponent's official ranking at the time (None if unknown)
+# how much the win chance moves per unit of level gap (logit scale), for the profile's performance rating
+_x = np.array([pre[i][EXT[i]["a"]][0] - pre[i][EXT[i]["b"]][0] for i in RIDX]); _y = np.log(pa_all[RIDX] / (1 - pa_all[RIDX]))
+SLOPE = float(np.cov(_x, _y)[0, 1] / np.var(_x, ddof=1))
 recs = defaultdict(list); nrated = defaultdict(int)
 for r in allrows:
     i = WHERE.get(id(r))
     for me, op, won in ((r["a"], r["b"], 1), (r["b"], r["a"], 0)):
         base = [r["when"].isoformat(), r.get("tname") or "", r["lvl"] or "", r["surf"] or "", r["rnd"] or "", op, won, r["score"] or ""]
         if i is None or i not in pre or i not in post:
-            recs[me].append(base + [None] * 9 + [0]); continue
+            recs[me].append(base + [None] * 9 + [0, orank(r, won)]); continue
         uo = EXT[i].get("upd_only", False)
         if not uo: nrated[me] += 1
         b0, b1, o0 = pre[i][me], post[i][me], pre[i][op]
@@ -75,7 +79,7 @@ for r in allrows:
             if won: spct, rpct = (sw / sn if sn else None), (rw / rn if rn else None)
             else: spct, rpct = ((rn - rw) / rn if rn else None), ((sn - sw) / sn if sn else None)
         recs[me].append(base + [R3(pw) if pw is not None else None, R3(b0[0]), R3(b1[0] - b0[0]), R3(b1[1] - b0[1]), R3(b1[2] - b0[2]), R3(b1[3] - b0[3]),
-                                R3(o0[0]), R3(spct * 100) if spct is not None else None, R3(rpct * 100) if rpct is not None else None, 2 if uo else 1])
+                                R3(o0[0]), R3(spct * 100) if spct is not None else None, R3(rpct * 100) if rpct is not None else None, 2 if uo else 1, orank(r, won)])
 players = [p for p in recs if nrated[p] >= 10]
 bucket = lambda p: zlib.crc32(p.encode()) % NB
 index = []
@@ -83,7 +87,7 @@ for p in sorted(players, key=lambda p: -nrated[p]):
     lv = (st["sg"][p] + st["rg"][p]) / 2
     index.append([p, bucket(p), nrated[p], recs[p][-1][0], R3(lv)])
 D = f"{SCR}/site_v8"
-json.dump(dict(tour=TOUR, lam=LAM, players=index), open(f"{D}/prof_{TOUR}_index.json", "w"), separators=(",", ":"))
+json.dump(dict(tour=TOUR, lam=LAM, slope=round(SLOPE, 4), players=index), open(f"{D}/prof_{TOUR}_index.json", "w"), separators=(",", ":"))
 tot = 0
 for k in range(NB):
     part = {p: recs[p] for p in players if bucket(p) == k}

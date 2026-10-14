@@ -972,13 +972,13 @@
       var x = d._by[name.toLowerCase()];
       if (!x) { pfHead.innerHTML = '<div class="pf-empty">' + esc(name) + ' has fewer than 10 rated matches in the data.</div>'; hideCards(); return; }
       return load("prof_" + tour + "_" + x[1] + ".json").then(function (part) {
-        pf.name = x[0]; pf.recs = part[x[0]] || []; pf.idx = x; renderProfileBody();
+        pf.name = x[0]; pf.recs = part[x[0]] || []; pf.idx = x; pf.slope = d.slope || 3; pf.calFrom = ""; pf.calTo = ""; renderProfileBody();
       });
     }).catch(function (e) { pfHead.innerHTML = '<div class="pf-empty">Couldn’t load the profile: ' + esc(e.message) + "</div>"; });
     try { history.replaceState(null, "", "#profile"); } catch (e) {}
   }
   window.__openProfile = openProfile;
-  function hideCards() { document.getElementById("pfSeasonsCard").hidden = true; document.getElementById("pfMatchesCard").hidden = true; }
+  function hideCards() { ["pfSeasonsCard", "pfCalCard", "pfMatchesCard"].forEach(function (id) { document.getElementById(id).hidden = true; }); }
   function renderProfile() {
     if (panels.profile.hidden) return;
     if (pf.name && !pf.recs) { openProfile(pf.tour, pf.name); return; }
@@ -1037,17 +1037,95 @@
       if (r[17]) { s.d += r[10]; s.ds += r[11]; s.dr += r[12]; s.end = r[9] + r[10]; s.n++; }
     });
     var cls = function (v) { return Math.abs(v) < 0.0005 ? "num" : v > 0 ? "num up" : "num dn"; };
-    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Δ Rating</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th></tr></thead><tbody>" +
+    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Performance</button></th><th><button>Δ Rating</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th></tr></thead><tbody>" +
       order.slice().reverse().map(function (y) {
-        var s = ys[y];
+        var s = ys[y], pr = perfOf(R.filter(function (r) { return r[0].slice(0, 4) === y; }));
         return '<tr><td class="l">' + y + '</td><td class="num">' + s.w + "–" + s.l + '</td><td class="num">' + (s.end != null ? s.end.toFixed(3) : "–") +
+          '</td><td class="' + (pr ? cls(pr.perf - pr.avg) : "num") + '" title="' + (pr ? "average rating going in " + pr.avg.toFixed(3) : "") + '">' + (pr ? (pr.cap > 0 ? "≥" : pr.cap < 0 ? "≤" : "") + pr.perf.toFixed(3) : "–") +
           '</td><td class="' + cls(s.d) + '">' + (s.n ? sgn(s.d, 3) : "–") + '</td><td class="' + cls(s.ds) + '">' + (s.n ? sgn(s.ds, 3) : "–") + '</td><td class="' + cls(s.dr) + '">' + (s.n ? sgn(s.dr, 3) : "–") + "</td></tr>";
       }).join("") + "</tbody>";
     document.getElementById("pfSeasonsCard").hidden = false;
     pfYear.innerHTML = '<option value="">All seasons</option>' + order.slice().reverse().map(function (y) { return '<option value="' + y + '">' + y + "</option>"; }).join("");
     pfYear.value = pf.year;
+    var yo = order.map(function (y) { return '<option value="' + y + '">' + y + "</option>"; }).join("");
+    calFrom.innerHTML = yo; calTo.innerHTML = yo;
+    calFrom.value = pf.calFrom || order[0]; calTo.value = pf.calTo || order[order.length - 1];
+    renderCal();
     renderMatches();
   }
+  // ---- calibration & level: completed matches with a win chance (r[8]) and a pre-match level (r[9]) ----
+  function perfOf(rs) {
+    // performance rating: the level at which the expected wins against these opponents equal the actual wins, i.e. the
+    // rating that would have come out of these matches unchanged. Shift d on the level moves each match's win chance by
+    // slope*d on the logit scale (slope fitted over all matches, prof index); capped at +-3 (all won / all lost).
+    rs = rs.filter(function (r) { return r[8] != null && r[9] != null; });
+    if (!rs.length) return null;
+    var c = pf.slope || 3, avg = 0, w = 0, L = rs.map(function (r) { avg += r[9]; w += r[6] ? 1 : 0; return logit(clamp(r[8], 1e-4, 1 - 1e-4)); });
+    avg /= rs.length;
+    var f = function (d) { var s = w; for (var i = 0; i < L.length; i++) s -= sig(L[i] + c * d); return s; };
+    var lo = -3, hi = 3, cap = 0;
+    if (f(hi) > 0) { cap = 1; lo = hi; } else if (f(lo) < 0) { cap = -1; hi = lo; }
+    for (var it = 0; it < 60 && !cap; it++) { var m = (lo + hi) / 2; if (f(m) > 0) lo = m; else hi = m; }
+    var d = (lo + hi) / 2;
+    return { avg: avg, perf: avg + d, d: d, cap: cap, n: rs.length, w: w };
+  }
+  var calFrom = document.getElementById("pfCalFrom"), calTo = document.getElementById("pfCalTo");
+  [calFrom, calTo].forEach(function (s) { s.addEventListener("change", function () { pf.calFrom = calFrom.value; pf.calTo = calTo.value; renderCal(); }); });
+  function renderCal() {
+    var R = pf.recs; if (!R) return;
+    var a = calFrom.value, b = calTo.value; if (a > b) { var t = a; a = b; b = t; }
+    var rs = R.filter(function (r) { var y = r[0].slice(0, 4); return y >= a && y <= b && r[8] != null; });
+    var span = a === b ? a : a + "–" + b;
+    var tile = function (k, v, s) { return '<div class="pf-tile"><div class="k">' + k + '</div><div class="v">' + v + '</div>' + (s ? '<div class="s">' + s + "</div>" : "") + "</div>"; };
+    var net = function (x) { return '<span class="' + (x > 0.05 ? "up" : x < -0.05 ? "dn" : "") + '">' + sgn(x, 1) + "</span>"; };
+    var ex = 0, won = 0; rs.forEach(function (r) { ex += r[8]; won += r[6] ? 1 : 0; });
+    var tiles = tile("Matches " + span, String(rs.length), "completed, with a pre-match win chance");
+    if (rs.length) {
+      tiles += tile("Wins vs expected", won + " / " + ex.toFixed(1), "net " + net(won - ex) + " wins · " + (won / rs.length * 100).toFixed(0) + "% won, " + (ex / rs.length * 100).toFixed(0) + "% expected");
+      var pr = perfOf(rs);
+      if (pr) tiles += tile("Performance rating", (pr.cap > 0 ? "≥" : pr.cap < 0 ? "≤" : "") + pr.perf.toFixed(2),
+        "average going in " + pr.avg.toFixed(2) + " · " + (Math.abs(pr.d) < 0.005 ? "played at level" : pr.d > 0 ? "played " + pr.d.toFixed(2) + " above level" : "played " + (-pr.d).toFixed(2) + " below level"));
+      var t10 = rs.filter(function (r) { return r[18] != null && r[18] <= 10; }), e10 = 0, w10 = 0;
+      t10.forEach(function (r) { e10 += r[8]; w10 += r[6] ? 1 : 0; });
+      tiles += t10.length ? tile("vs top 10", w10 + " / " + t10.length, (w10 / t10.length * 100).toFixed(0) + "% won, " + (e10 / t10.length * 100).toFixed(0) + "% expected · net " + net(w10 - e10) + " wins")
+        : tile("vs top 10", "–", "no completed match against a top-10 player");
+    }
+    document.getElementById("pfCalTiles").innerHTML = tiles;
+    // calibration chart: 10 bins of the predicted chance; dot = mean predicted vs share won, sized by matches, 95% (Wilson) bar
+    var B = []; for (var i = 0; i < 10; i++) B.push({ n: 0, p: 0, w: 0 });
+    rs.forEach(function (r) { var k = Math.min(9, Math.floor(r[8] * 10)); B[k].n++; B[k].p += r[8]; B[k].w += r[6] ? 1 : 0; });
+    var W = 360, H = 300, ml = 42, mr = 12, mt = 12, mb = 38, pw = W - ml - mr, ph = H - mt - mb;
+    var X = function (v) { return ml + v * pw; }, Y = function (v) { return mt + (1 - v) * ph; };
+    var g = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Calibration: predicted win chance against share of matches won">';
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+      g += '<line class="ax" x1="' + X(0) + '" x2="' + X(1) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" opacity="' + (v ? 0.6 : 1) + '"/>' +
+        '<text class="tk" x="' + (ml - 6) + '" y="' + (Y(v) + 3.5) + '" text-anchor="end">' + v * 100 + "%</text>" +
+        '<text class="tk" x="' + X(v) + '" y="' + (H - mb + 15) + '" text-anchor="middle">' + v * 100 + "%</text>";
+    });
+    g += '<line class="diag" x1="' + X(0) + '" y1="' + Y(0) + '" x2="' + X(1) + '" y2="' + Y(1) + '"/>';
+    g += '<text class="lbl" x="' + (ml + pw / 2) + '" y="' + (H - 4) + '" text-anchor="middle">Predicted win chance</text>';
+    g += '<text class="lbl" transform="translate(11 ' + (mt + ph / 2) + ') rotate(-90)" text-anchor="middle">Won</text>';
+    var tips = [];
+    B.forEach(function (b, k) {
+      if (!b.n) return;
+      var x = b.p / b.n, y = b.w / b.n, z = 1.96, n = b.n, den = 1 + z * z / n, cen = (y + z * z / (2 * n)) / den, hw = z * Math.sqrt(y * (1 - y) / n + z * z / (4 * n * n)) / den;
+      var rad = Math.min(4 + Math.sqrt(n) * 0.9, 11);
+      g += '<line class="ci" x1="' + X(x) + '" x2="' + X(x) + '" y1="' + Y(Math.max(0, cen - hw)) + '" y2="' + Y(Math.min(1, cen + hw)) + '"/>';
+      g += '<circle class="pt" cx="' + X(x) + '" cy="' + Y(y) + '" r="' + rad.toFixed(1) + '"/>';
+      g += '<circle class="hit" data-i="' + tips.length + '" cx="' + X(x) + '" cy="' + Y(y) + '" r="' + Math.max(rad + 6, 13) + '"/>';
+      tips.push({ x: X(x) / W, y: Y(y) / H, t: "Win chance " + k * 10 + "–" + (k + 1) * 10 + "%: " + n + " match" + (n > 1 ? "es" : "") + "<br>expected " + (x * 100).toFixed(0) + "% (" + b.p.toFixed(1) + " wins) · won " + (y * 100).toFixed(0) + "% (" + b.w + ")" });
+    });
+    g += "</svg>";
+    var host = document.getElementById("pfCalChart");
+    host.innerHTML = rs.length ? g + '<div class="cal-tip" hidden></div>' : '<div class="pf-empty">No completed matches in these seasons.</div>';
+    var tip = host.querySelector(".cal-tip");
+    Array.prototype.forEach.call(host.querySelectorAll(".hit"), function (c) {
+      c.addEventListener("mouseenter", function () { var d = tips[+c.dataset.i]; tip.innerHTML = d.t; tip.style.left = d.x * 100 + "%"; tip.style.top = d.y * 100 + "%"; tip.hidden = false; });
+      c.addEventListener("mouseleave", function () { tip.hidden = true; });
+    });
+    document.getElementById("pfCalCard").hidden = false;
+  }
+
   var RND = { F: "Final", SF: "Semi", QF: "Quarter", RR: "Round robin", BR: "Bronze" };
   function renderMatches() {
     var R = pf.recs; if (!R) return;

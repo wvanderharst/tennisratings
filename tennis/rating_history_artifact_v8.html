@@ -233,6 +233,21 @@
   .pf-tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); font-weight: 700; }
   .pf-tile .v { font: 600 17px var(--mono); margin-top: 3px; }
   .pf-tile .s { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
+  /* calibration & level card */
+  .cal-wrap { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 10px; }
+  .cal-chart { position: relative; max-width: 480px; }
+  .cal-chart svg { width: 100%; height: auto; display: block; }
+  .cal-chart .ax { stroke: var(--line); stroke-width: 1; }
+  .cal-chart .tk { fill: var(--ink-soft); font: 10.5px var(--mono); }
+  .cal-chart .lbl { fill: var(--ink-soft); font-size: 11px; }
+  .cal-chart .diag { stroke: var(--ink-soft); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .7; }
+  .cal-chart .ci { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; opacity: .45; }
+  .cal-chart .pt { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+  .cal-chart .hit { fill: transparent; cursor: default; }
+  .cal-tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--panel); font-size: 11.5px; line-height: 1.4;
+             padding: 6px 9px; border-radius: 8px; white-space: nowrap; transform: translate(-50%, -100%); margin-top: -10px; }
+  .cal-range { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-soft); }
+  .pf-tile .v .up { color: var(--wm); } .pf-tile .v .dn { color: var(--accent); }
   .pf-select { padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); color: var(--ink); font: 13px var(--sans); }
   table.rk td.up { color: var(--wm); }
   table.rk td.dn { color: var(--accent); }
@@ -596,6 +611,19 @@
       <div class="pf-h">Season by season</div>
       <div class="tablewrap"><table class="rk" id="pfSeasons"></table></div>
     </div>
+    <div class="card" id="pfCalCard" hidden>
+      <div class="rk-top" style="margin-bottom:4px">
+        <div class="pf-h" style="margin:0">Calibration &amp; level</div>
+        <div class="cal-range">
+          <select id="pfCalFrom" class="pf-select" aria-label="From season"></select> to
+          <select id="pfCalTo" class="pf-select" aria-label="To season"></select>
+        </div>
+      </div>
+      <div class="cal-wrap">
+        <div class="pf-tiles" id="pfCalTiles"></div>
+        <div class="cal-chart" id="pfCalChart"></div>
+      </div>
+    </div>
     <div class="card" id="pfMatchesCard" hidden>
       <div class="rk-top" style="margin-bottom:8px">
         <div class="pf-h" style="margin:0">Every match</div>
@@ -613,7 +641,13 @@
       <div class="showmore"><span class="qf" id="pfMore" role="button" tabindex="0">Show all</span></div>
     </div>
     <div class="note" id="pfNote">
-      Every match of the player, newest first. <strong>Win chance</strong> is the full model's pre-match probability (ratings, closing, head-to-head and the corrections). The <strong>&Delta;</strong> columns are what that match did to the player's ratings: overall level (the average of serve and return), serve, return, and the level on that match's surface (general plus the surface gap). Ratings move on points won on serve and on return compared with what the model expected against that opponent, so a win can lower a rating (winning while being outplayed on points) and a loss can raise it. Before 1991, and wherever serve stats are missing, ratings learn from games won instead. In a retirement with match stats, only the player who did not retire learns from the points played (the injured player's points mostly show the injury); walkovers and defaults don't change the ratings. Win chance is shown for completed matches only. Ratings are in the model's units: 0 is an average tour player. Click an opponent to open their profile. <strong>Predicted titles</strong> add up the player's title chance on the eve of every event they entered: each entrant's ratings frozen before the event, then 1,200 (Slams 3,000) seeded random draws played out with the model (ratings, holds and sets, closing; best of five where played; and the observed retirement/walkover risk per match, in which case the result is close to a coin flip). Counted: tour-level knockout events (men 1968 on, women 1990 on); not counted: Davis/Fed Cup, round-robin season finals and men's challengers. Won more than predicted = beat the odds.
+      Every match of the player, newest first. <strong>Win chance</strong> is the full model's pre-match probability (ratings, closing, head-to-head and the corrections). The <strong>&Delta;</strong> columns are what that match did to the player's ratings: overall level (the average of serve and return), serve, return, and the level on that match's surface (general plus the surface gap). Ratings move on points won on serve and on return compared with what the model expected against that opponent, so a win can lower a rating (winning while being outplayed on points) and a loss can raise it. Before 1991, and wherever serve stats are missing, ratings learn from games won instead. In a retirement with match stats, only the player who did not retire learns from the points played (the injured player's points mostly show the injury); walkovers and defaults don't change the ratings. Win chance is shown for completed matches only. Ratings are in the model's units: 0 is an average tour player. Click an opponent to open their profile.
+      <strong>Calibration</strong> groups the player's completed matches by the model's pre-match win chance (in steps of
+      10%) and plots how often they actually won: on the dashed line the model got this player right; above it the player
+      won more often than predicted (the bars are 95% intervals, so small groups swing a lot). <strong>Performance rating</strong>
+      is the rating that would have left the player's rating unchanged over the chosen seasons: the level at which the
+      expected wins equal the actual wins, against the same opponents. Above the average rating going in = played above
+      their level. <strong>vs top 10</strong> uses the opponent's official ranking on the day. <strong>Predicted titles</strong> add up the player's title chance on the eve of every event they entered: each entrant's ratings frozen before the event, then 1,200 (Slams 3,000) seeded random draws played out with the model (ratings, holds and sets, closing; best of five where played; and the observed retirement/walkover risk per match, in which case the result is close to a coin flip). Counted: tour-level knockout events (men 1968 on, women 1990 on); not counted: Davis/Fed Cup, round-robin season finals and men's challengers. Won more than predicted = beat the odds.
     </div>
   </section>
 </div>
