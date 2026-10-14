@@ -168,7 +168,7 @@ def load():
                     a=a, b=b, surf=surf, bo=bo, score=score, rnd=(r.get("round") or "").strip(),
                     indoor=(r.get("indoor") or "").strip().upper() == "I",
                     minutes=to_int(r.get("minutes")),
-                    ret="RET" in up, wo="W/O" in up, dq=("DEF" in up) or ("ABD" in up),
+                    ret=("RET" in up) or ("DEF" in up), wo="W/O" in up, dq="ABD" in up,   # a default (DEF) counts as a retirement
                     ent_a=(r.get("winner_entry") or "").strip().upper(), ent_b=(r.get("loser_entry") or "").strip().upper(),
                     ioc_a=(r.get("winner_ioc") or "").strip(), ioc_b=(r.get("loser_ioc") or "").strip(),
                     hand_a=(r.get("winner_hand") or "").strip().upper(), hand_b=(r.get("loser_hand") or "").strip().upper(),
