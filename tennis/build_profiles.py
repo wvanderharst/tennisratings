@@ -4,7 +4,7 @@ what the match did to the ratings.   python3 build_profiles.py atp|wta
 Writes site_v8/prof_{tour}_index.json  ([name, bucket, rated matches, last date, current level] per player)
    and site_v8/prof_{tour}_{k}.json    (players in bucket k -> list of matches, newest last)
 Match row: [date, tournament, level, surface, round, opponent, won, score, win_chance, level_before, d_level, d_serve,
-            d_return, d_surface, opp_level, serve_pts_won_pct, return_pts_won_pct, rated, opp_rank]
+            d_return, d_surface, opp_level, serve_pts_won_pct, return_pts_won_pct, rated, opp_rank, performance]
 Ratings in the model's units (level = (serve + return) / 2; surface = level on that surface = general + gap)."""
 import paths as P
 import json, sys, math, zlib
@@ -58,6 +58,25 @@ zf = F @ minimize(g, w0, jac=True, method="L-BFGS-B").x
 pa_all = np.full(len(EXT), np.nan); pa_all[RIDX] = 1 / (1 + np.exp(-zf))
 
 R3 = lambda x: round(float(x), 3)
+# ---- match performance rating: the level at which the model would have expected exactly the points the player won
+# (on serve + on return, against this opponent on this surface), i.e. the rating a zero update would have come from.
+# Shift d on both serve and return of the player: expected points won = sn*sig(m + (s+d - r_opp)/PT_M) + rn*(1 - sig(m + (s_opp - r-d)/PT_M)).
+PT_M = 2.132; S4 = st["S4"]
+pidx = [i for i in range(len(EXT)) if not EXT[i].get("upd_only") and EXT[i]["pts"]]
+perf = {}
+if pidx:
+    S4p = S4[pidx]; P = np.array([EXT[i]["pts"] for i in pidx], float)       # (won, tot, srv_won, srv_n, ret_won, ret_n), winner's view
+    sig_ = lambda x: 1 / (1 + np.exp(-x))
+    for side in (0, 1):                     # 0 = winner (a), 1 = loser (b)
+        s_me, r_me, s_op, r_op = (S4p[:, 0], S4p[:, 1], S4p[:, 2], S4p[:, 3]) if side == 0 else (S4p[:, 2], S4p[:, 3], S4p[:, 0], S4p[:, 1])
+        sw, sn, rw, rn = (P[:, 2], P[:, 3], P[:, 4], P[:, 5]) if side == 0 else (P[:, 5] - P[:, 4], P[:, 5], P[:, 3] - P[:, 2], P[:, 3])
+        m = S4p[:, 4]; lo = np.full(len(pidx), -3.0); hi = np.full(len(pidx), 3.0)
+        for _ in range(50):
+            d = (lo + hi) / 2
+            exp_ = sn * sig_(m + (s_me + d - r_op) / PT_M) + rn * (1 - sig_(m + (s_op - r_me - d) / PT_M))
+            up = exp_ < sw + rw; lo = np.where(up, d, lo); hi = np.where(up, hi, d)
+        d = (lo + hi) / 2
+        for k, i in enumerate(pidx): perf[(i, side)] = float(d[k])
 orank = lambda r, won: r["rank_b"] if won else r["rank_a"]     # opponent's official ranking at the time (None if unknown)
 # how much the win chance moves per unit of level gap (logit scale), for the profile's performance rating
 _x = np.array([pre[i][EXT[i]["a"]][0] - pre[i][EXT[i]["b"]][0] for i in RIDX]); _y = np.log(pa_all[RIDX] / (1 - pa_all[RIDX]))
@@ -68,7 +87,7 @@ for r in allrows:
     for me, op, won in ((r["a"], r["b"], 1), (r["b"], r["a"], 0)):
         base = [r["when"].isoformat(), r.get("tname") or "", r["lvl"] or "", r["surf"] or "", r["rnd"] or "", op, won, r["score"] or ""]
         if i is None or i not in pre or i not in post:
-            recs[me].append(base + [None] * 9 + [0, orank(r, won)]); continue
+            recs[me].append(base + [None] * 9 + [0, orank(r, won), None]); continue
         uo = EXT[i].get("upd_only", False)
         if not uo: nrated[me] += 1
         b0, b1, o0 = pre[i][me], post[i][me], pre[i][op]
@@ -79,7 +98,8 @@ for r in allrows:
             if won: spct, rpct = (sw / sn if sn else None), (rw / rn if rn else None)
             else: spct, rpct = ((rn - rw) / rn if rn else None), ((sn - sw) / sn if sn else None)
         recs[me].append(base + [R3(pw) if pw is not None else None, R3(b0[0]), R3(b1[0] - b0[0]), R3(b1[1] - b0[1]), R3(b1[2] - b0[2]), R3(b1[3] - b0[3]),
-                                R3(o0[0]), R3(spct * 100) if spct is not None else None, R3(rpct * 100) if rpct is not None else None, 2 if uo else 1, orank(r, won)])
+                                R3(o0[0]), R3(spct * 100) if spct is not None else None, R3(rpct * 100) if rpct is not None else None, 2 if uo else 1, orank(r, won),
+                                R3(b0[0] + perf[(i, 1 - won)]) if (i, 1 - won) in perf else None])
 players = [p for p in recs if nrated[p] >= 10]
 bucket = lambda p: zlib.crc32(p.encode()) % NB
 index = []

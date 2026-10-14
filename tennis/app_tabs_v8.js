@@ -1133,7 +1133,7 @@
     var lim = pf.all ? list.length : 60;
     var cls = function (v) { return v == null || Math.abs(v) < 0.0005 ? "num" : v > 0 ? "num up" : "num dn"; };
     var f = function (v, d, s) { return v == null ? "–" : (s ? sgn(v, d) : v.toFixed(d)); };
-    var head = "<thead><tr>" + [["Date", "l"], ["Tournament", "l"], ["Round", "l"], ["Surface", "l"], ["Opponent", "l"], ["Opp. rating"], ["Result", "l"], ["Win chance"], ["Rating after"], ["Δ Rating"], ["Δ Serve"], ["Δ Return"], ["Δ Surface"], ["Serve pts"], ["Return pts"]]
+    var head = "<thead><tr>" + [["Date", "l"], ["Tournament", "l"], ["Round", "l"], ["Surface", "l"], ["Opponent", "l"], ["Opp. rating"], ["Result", "l"], ["Win chance"], ["Rating after"], ["Performance"], ["Δ Rating"], ["Δ Serve"], ["Δ Return"], ["Δ Surface"], ["Serve pts"], ["Return pts"]]
       .map(function (c) { return '<th class="' + (c[1] || "") + '"><button tabindex="-1">' + c[0] + "</button></th>"; }).join("") + "</tr></thead>";
     var body = list.slice(0, lim).map(function (r) {
       var won = r[6], sc = won ? r[7] : flipScore(r[7]), rated = r[17];
@@ -1141,10 +1141,11 @@
         '</td><td class="l">' + (r[3] || "–") + '</td><td class="l"><span class="opp" data-n="' + esc(r[5]) + '">' + esc(r[5]) + '</span></td><td class="num">' + f(r[14], 2) +
         '</td><td class="l"><span class="res" style="color:' + (won ? "var(--wm)" : "var(--accent)") + '">' + (won ? "W" : "L") + "</span> " + esc(sc) +
         '</td><td class="num">' + (r[8] == null ? "–" : (r[8] * 100).toFixed(0) + "%") + '</td><td class="num">' + (rated ? (r[9] + r[10]).toFixed(3) : "–") +
+        '</td><td class="' + (r[19] == null ? "num" : cls(r[19] - r[9])) + '" title="' + (r[19] == null ? "" : "rating going in " + r[9].toFixed(3) + ": the points won fit a rating of " + r[19].toFixed(3)) + '">' + (r[19] == null ? "–" : r[19].toFixed(2)) +
         '</td><td class="' + cls(r[10]) + '">' + f(r[10], 3, 1) + '</td><td class="' + cls(r[11]) + '">' + f(r[11], 3, 1) + '</td><td class="' + cls(r[12]) + '">' + f(r[12], 3, 1) +
         '</td><td class="' + cls(r[13]) + '">' + f(r[13], 3, 1) + '</td><td class="num">' + (r[15] == null ? "–" : r[15].toFixed(0) + "%") + '</td><td class="num">' + (r[16] == null ? "–" : r[16].toFixed(0) + "%") + "</td></tr>";
     }).join("");
-    document.getElementById("pfMatches").innerHTML = head + "<tbody>" + (body || '<tr><td class="l" colspan="15">No matches for this filter.</td></tr>') + "</tbody>";
+    document.getElementById("pfMatches").innerHTML = head + "<tbody>" + (body || '<tr><td class="l" colspan="16">No matches for this filter.</td></tr>') + "</tbody>";
     Array.prototype.forEach.call(document.querySelectorAll("#pfMatches .opp"), function (s) { s.addEventListener("click", function () { openProfile(pf.tour, s.dataset.n); window.scrollTo(0, 0); }); });
     pfMore.hidden = list.length <= 60; pfMore.textContent = pf.all ? "Show latest 60" : "Show all " + list.length;
     document.getElementById("pfMatchesCard").hidden = false;
