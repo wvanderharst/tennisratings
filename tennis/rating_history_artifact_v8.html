@@ -344,6 +344,7 @@
     <button role="tab" id="tab-women" data-tab="women" aria-selected="false">Women &middot; history</button>
     <button role="tab" id="tab-rankings" data-tab="rankings" aria-selected="false">Current ratings</button>
     <button role="tab" id="tab-peaks" data-tab="peaks" aria-selected="false">All-time peaks</button>
+    <button role="tab" id="tab-best" data-tab="best" aria-selected="false">Best performances</button>
     <button role="tab" id="tab-odds" data-tab="odds" aria-selected="false">Match odds</button>
     <button role="tab" id="tab-profile" data-tab="profile" aria-selected="false">Player profile</button>
   </nav>
@@ -473,6 +474,28 @@
       can differ from the biggest lead (Federer: highest rating in August 2015, biggest lead in January 2007). Men from
       1969, women from 1992 (the data starts in 1968 and 1990 and needs some time to settle). Click a name for the
       player&rsquo;s profile.
+    </div>
+  </section>
+
+  <section id="panelBest" hidden>
+    <div class="card">
+      <div class="rk-top">
+        <div class="toolbar-group">
+          <div class="seg" id="bpTour">
+            <button data-tour="atp" aria-pressed="true">Men</button>
+            <button data-tour="wta" aria-pressed="false">Women</button>
+          </div>
+        </div>
+      </div>
+      <div class="tablewrap"><table class="rk" id="bpTable"></table></div>
+    </div>
+    <div class="note">
+      The 100 highest <strong>match performance ratings</strong>: for one match, the rating at which the model would have
+      expected exactly the points the player won (on serve and on return, against that opponent on that surface), the same
+      expectation the rating update uses. A lopsided win over a strong opponent ranks highest; short matches swing more,
+      since there are fewer points. Tour-level main draws only (no Challengers, qualifying or Davis/Fed Cup, where
+      mismatches make a near-perfect score almost expected). Needs point statistics (men and women from about 1991). <strong>Above rating</strong>
+      is how far the performance was above the player's rating going in. Click a name for the player's profile.
     </div>
   </section>
 

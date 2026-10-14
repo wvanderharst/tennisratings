@@ -70,7 +70,7 @@ if pidx:
     for side in (0, 1):                     # 0 = winner (a), 1 = loser (b)
         s_me, r_me, s_op, r_op = (S4p[:, 0], S4p[:, 1], S4p[:, 2], S4p[:, 3]) if side == 0 else (S4p[:, 2], S4p[:, 3], S4p[:, 0], S4p[:, 1])
         sw, sn, rw, rn = (P[:, 2], P[:, 3], P[:, 4], P[:, 5]) if side == 0 else (P[:, 5] - P[:, 4], P[:, 5], P[:, 3] - P[:, 2], P[:, 3])
-        m = S4p[:, 4]; lo = np.full(len(pidx), -3.0); hi = np.full(len(pidx), 3.0)
+        m = S4p[:, 4]; lo = np.full(len(pidx), -5.0); hi = np.full(len(pidx), 5.0)
         for _ in range(50):
             d = (lo + hi) / 2
             exp_ = sn * sig_(m + (s_me + d - r_op) / PT_M) + rn * (1 - sig_(m + (s_op - r_me - d) / PT_M))
@@ -112,6 +112,13 @@ for p in sorted(players, key=lambda p: -nrated[p]):
     lv = (st["sg"][p] + st["rg"][p]) / 2
     index.append([p, bucket(p), nrated[p], recs[p][-1][0], R3(lv)])
 D = f"{SCR}/site_v8"
+# best single-match performances (Best performances tab): the 100 highest match performance ratings
+# tour-level main draws only: against Challenger/qualifying/Davis-Fed Cup mismatches a near-perfect score is almost expected
+# and the performance shoots up without saying much
+tour_main = lambda r: r[2] not in ("C", "D", "Q", "S") and not (r[4] or "").startswith("Q")
+best = sorted(((p, r) for p in recs for r in recs[p] if r[19] is not None and tour_main(r)), key=lambda pr: -pr[1][19])[:100]
+json.dump([[p] + [r[k] for k in (0, 1, 2, 3, 4, 5, 6, 7, 19, 9, 14, 15, 16)] for p, r in best],
+          open(f"{SCR}/site_v8/best_{TOUR}.json", "w"), separators=(",", ":"))    # player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%
 json.dump(dict(tour=TOUR, lam=LAM, slope=round(SLOPE, 4), players=index), open(f"{D}/prof_{TOUR}_index.json", "w"), separators=(",", ":"))
 tot = 0
 for k in range(NB):

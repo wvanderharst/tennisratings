@@ -385,7 +385,7 @@
   }
 
   // ---------------- tabs ----------------
-  var panels = { chart: document.getElementById("panelChart"), rankings: document.getElementById("panelRankings"), odds: document.getElementById("panelOdds"), profile: document.getElementById("panelProfile"), peaks: document.getElementById("panelPeaks") };
+  var panels = { chart: document.getElementById("panelChart"), rankings: document.getElementById("panelRankings"), odds: document.getElementById("panelOdds"), profile: document.getElementById("panelProfile"), peaks: document.getElementById("panelPeaks"), best: document.getElementById("panelBest") };
   var tabBtns = Array.prototype.slice.call(document.querySelectorAll("#tabs button"));
   var chartHost = document.getElementById("chartHost");
   function showTab(tab) {
@@ -395,6 +395,7 @@
     panels.odds.hidden = tab !== "odds";
     panels.profile.hidden = tab !== "profile";
     panels.peaks.hidden = tab !== "peaks";
+    panels.best.hidden = tab !== "best";
     var sub = document.getElementById("subtitle");
     if (tab === "men" || tab === "women") {
       var tour = tab === "men" ? "atp" : "wta";
@@ -406,6 +407,9 @@
     } else if (tab === "rankings") {
       sub.textContent = "Every active player ranked on what the full model expects them to win: average chance against the current No. 5\u201315";
       renderRankings();
+    } else if (tab === "best") {
+      sub.textContent = "The 100 best single-match performances: the rating the points won in one match correspond to";
+      renderBest();
     } else if (tab === "peaks") {
       sub.textContent = "The 100 greatest peaks: each player's biggest lead over that moment's No. 5\u201315, men since 1969 and women since 1992";
       renderPeaks();
@@ -614,6 +618,35 @@
         s.addEventListener("click", function () { openProfile(tour, s.dataset.n); window.scrollTo(0, 0); });
       });
     }).catch(function (e) { pkTable.innerHTML = '<tr><td class="loading">Couldn\u2019t load the peaks: ' + esc(e.message) + "</td></tr>"; });
+  }
+
+  // ---------------- best performances tab ----------------
+  var bp = { tour: "atp" }, bpTable = document.getElementById("bpTable");
+  segBind("bpTour", "tour", function (v) { bp.tour = v; renderBest(); });
+  function renderBest() {
+    bpTable.innerHTML = '<tr><td class="loading" style="text-align:center">Loading&hellip;</td></tr>';
+    var tour = bp.tour;
+    load("best_" + tour + ".json").then(function (rows) {
+      if (bp.tour !== tour) return;
+      var RN = { F: "Final", SF: "Semi", QF: "Quarter", RR: "Round robin" };
+      var head = "<thead><tr>" + [["#", "l"], ["Player", "l"], ["Performance \u2193", ""], ["Above rating", ""], ["Date", ""], ["Tournament", "l"], ["Round", "l"],
+        ["Surface", "l"], ["Opponent", "l"], ["Opp. rating", ""], ["Result", "l"], ["Serve pts", ""], ["Return pts", ""]].map(function (c) {
+          return '<th class="' + c[1] + (c[0].indexOf("\u2193") >= 0 ? " sorted" : "") + '"><button tabindex="-1">' + c[0] + "</button></th>";
+        }).join("") + "</tr></thead>";
+      var body = rows.map(function (r, i) {     // [player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%]
+        var sc = r[7] ? r[8] : r[8].split(" ").map(function (t) { var m = /^(\d+)-(\d+)(\(\d+\))?$/.exec(t); return m ? m[2] + "-" + m[1] + (m[3] || "") : t; }).join(" ");
+        return "<tr><td class=\"pos l\">" + (i + 1) + '</td><td class="l"><span class="pname link" data-n="' + esc(r[0]) + '">' + esc(r[0]) + "</span></td>" +
+          '<td class="num" style="font-weight:700">' + r[9].toFixed(2) + '</td><td class="num">+' + (r[9] - r[10]).toFixed(2) + "</td>" +
+          '<td class="num">' + fmtDate(r[1]) + '</td><td class="l">' + esc(r[2]) + '</td><td class="l">' + (RN[r[5]] || r[5]) + '</td><td class="l">' + (r[4] || "\u2013") + "</td>" +
+          '<td class="l"><span class="pname link" data-n="' + esc(r[6]) + '">' + esc(r[6]) + '</span></td><td class="num">' + (r[11] == null ? "\u2013" : r[11].toFixed(2)) + "</td>" +
+          '<td class="l"><span class="res" style="color:' + (r[7] ? "var(--wm)" : "var(--accent)") + '">' + (r[7] ? "W" : "L") + "</span> " + esc(sc) + "</td>" +
+          '<td class="num">' + (r[12] == null ? "\u2013" : r[12].toFixed(0) + "%") + '</td><td class="num">' + (r[13] == null ? "\u2013" : r[13].toFixed(0) + "%") + "</td></tr>";
+      }).join("");
+      bpTable.innerHTML = head + "<tbody>" + body + "</tbody>";
+      Array.prototype.forEach.call(bpTable.querySelectorAll(".pname.link"), function (s) {
+        s.addEventListener("click", function () { openProfile(tour, s.dataset.n); window.scrollTo(0, 0); });
+      });
+    }).catch(function (e) { bpTable.innerHTML = '<tr><td class="loading">Couldn\u2019t load: ' + esc(e.message) + "</td></tr>"; });
   }
 
   // ---------------- match odds tab ----------------
@@ -1152,7 +1185,7 @@
 
   // ---------------- boot ----------------
   var start = (location.hash || "").replace("#", "");
-  if (["men", "women", "rankings", "peaks", "odds", "profile"].indexOf(start) < 0) start = "men";
+  if (["men", "women", "rankings", "peaks", "best", "odds", "profile"].indexOf(start) < 0) start = "men";
   if (start !== "men") load("traj_atp.json");   // warm the default chart in the background
   showTab(start);
   window.__oddsCompute = function (tour, a, b, o) { var D = ODDS[tour]; return compute(D, findP(D, a), findP(D, b), o).p; };
