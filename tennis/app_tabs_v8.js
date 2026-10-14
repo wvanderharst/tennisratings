@@ -1037,12 +1037,13 @@
       if (r[17]) { s.d += r[10]; s.ds += r[11]; s.dr += r[12]; s.end = r[9] + r[10]; s.n++; }
     });
     var cls = function (v) { return Math.abs(v) < 0.0005 ? "num" : v > 0 ? "num up" : "num dn"; };
-    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Performance</button></th><th><button>Δ Rating</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th></tr></thead><tbody>" +
-      order.slice().reverse().map(function (y) {
-        var s = ys[y], pr = perfOf(R.filter(function (r) { return r[0].slice(0, 4) === y; }));
+    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Performance</button></th><th><button>Δ Rating</button></th><th><button>Age &amp; layoffs</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th></tr></thead><tbody>" +
+      order.slice().reverse().map(function (y, k, rev) {
+        // rating change between season ends that did not come from the matches (age drift, decay during layoffs)
+        var s = ys[y], prevY = rev[k + 1], prev = prevY ? ys[prevY] : null, dr = prev && prev.end != null && s.end != null && s.n ? s.end - prev.end - s.d : null, pr = perfOf(R.filter(function (r) { return r[0].slice(0, 4) === y; }));
         return '<tr><td class="l">' + y + '</td><td class="num">' + s.w + "–" + s.l + '</td><td class="num">' + (s.end != null ? s.end.toFixed(3) : "–") +
           '</td><td class="' + (pr ? cls(pr.perf - pr.avg) : "num") + '" title="' + (pr ? "average rating going in " + pr.avg.toFixed(3) : "") + '">' + (pr ? (pr.cap > 0 ? "≥" : pr.cap < 0 ? "≤" : "") + pr.perf.toFixed(3) : "–") +
-          '</td><td class="' + cls(s.d) + '">' + (s.n ? sgn(s.d, 3) : "–") + '</td><td class="' + cls(s.ds) + '">' + (s.n ? sgn(s.ds, 3) : "–") + '</td><td class="' + cls(s.dr) + '">' + (s.n ? sgn(s.dr, 3) : "–") + "</td></tr>";
+          '</td><td class="' + cls(s.d) + '">' + (s.n ? sgn(s.d, 3) : "–") + '</td><td class="' + (dr == null ? "num" : cls(dr)) + '" style="opacity:.75">' + (dr == null ? "–" : sgn(dr, 3)) + '</td><td class="' + cls(s.ds) + '">' + (s.n ? sgn(s.ds, 3) : "–") + '</td><td class="' + cls(s.dr) + '">' + (s.n ? sgn(s.dr, 3) : "–") + "</td></tr>";
       }).join("") + "</tbody>";
     document.getElementById("pfSeasonsCard").hidden = false;
     pfYear.innerHTML = '<option value="">All seasons</option>' + order.slice().reverse().map(function (y) { return '<option value="' + y + '">' + y + "</option>"; }).join("");
