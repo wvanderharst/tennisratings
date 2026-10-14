@@ -77,4 +77,8 @@ def lls2(m, mix):
 for lab, m in (("held-out, all matches", teX), ("held-out, completed", teX & (kind == 0)), ("held-out, retirements+walkovers", teX & (kind > 0))):
     print(f"  {lab:34s} n={int(m.sum()):6d} | ignoring retirements {lls2(m, False):.5f} | with retirement risk {lls2(m, True):.5f}")
 d = json.load(open(P.OUT + f"/ret_fit_{T}.json")); d.update(r_slam=out["Slam"][0], b_slam=out["Slam"][1], r_other=out["other"][0], b_other=out["other"][1])
+# the share of matches ending early is fixed at 3% (Slams and other events, both tours), as in the odds tab; the fitted
+# shares are kept for reference, the slopes (how much strength still counts when it happens) stay as fitted
+RET_RISK = 0.03
+d.update(r_slam_fit=d["r_slam"], r_other_fit=d["r_other"], r_slam=RET_RISK, r_other=RET_RISK)
 json.dump(d, open(P.OUT + f"/ret_fit_{T}.json", "w"))
