@@ -1055,19 +1055,16 @@
   }
   // ---- calibration & level: completed matches with a win chance (r[8]) and a pre-match level (r[9]) ----
   function perfOf(rs) {
-    // performance rating: the level at which the expected wins against these opponents equal the actual wins, i.e. the
-    // rating that would have come out of these matches unchanged. Shift d on the level moves each match's win chance by
-    // slope*d on the logit scale (slope fitted over all matches, prof index); capped at +-3 (all won / all lost).
-    rs = rs.filter(function (r) { return r[8] != null && r[9] != null; });
+    // performance rating over a set of matches, from points won like the rating itself: the shift of the rating at which
+    // the summed point surprise is zero (sum of r[20] = points won above expectation, over the sum of r[21] = how fast that
+    // expectation moves with the rating), added to the average rating going in. Long matches weigh more, as in the update.
+    rs = rs.filter(function (r) { return r[20] != null && r[21] > 0; });
     if (!rs.length) return null;
-    var c = pf.slope || 3, avg = 0, w = 0, L = rs.map(function (r) { avg += r[9]; w += r[6] ? 1 : 0; return logit(clamp(r[8], 1e-4, 1 - 1e-4)); });
-    avg /= rs.length;
-    var f = function (d) { var s = w; for (var i = 0; i < L.length; i++) s -= sig(L[i] + c * d); return s; };
-    var lo = -3, hi = 3, cap = 0;
-    if (f(hi) > 0) { cap = 1; lo = hi; } else if (f(lo) < 0) { cap = -1; hi = lo; }
-    for (var it = 0; it < 60 && !cap; it++) { var m = (lo + hi) / 2; if (f(m) > 0) lo = m; else hi = m; }
-    var d = (lo + hi) / 2;
-    return { avg: avg, perf: avg + d, d: d, cap: cap, n: rs.length, w: w };
+    var avg = 0, su = 0, sl = 0;
+    rs.forEach(function (r) { avg += r[9] * r[21]; su += r[20]; sl += r[21]; });
+    avg /= sl;
+    var d = clamp(su / sl, -3, 3);
+    return { avg: avg, perf: avg + d, d: d, cap: 0, n: rs.length };
   }
   var calFrom = document.getElementById("pfCalFrom"), calTo = document.getElementById("pfCalTo");
   [calFrom, calTo].forEach(function (s) { s.addEventListener("change", function () { pf.calFrom = calFrom.value; pf.calTo = calTo.value; renderCal(); }); });
@@ -1083,8 +1080,9 @@
     if (rs.length) {
       tiles += tile("Wins vs expected", won + " / " + ex.toFixed(1), "net " + net(won - ex) + " wins · " + (won / rs.length * 100).toFixed(0) + "% won, " + (ex / rs.length * 100).toFixed(0) + "% expected");
       var pr = perfOf(rs);
-      if (pr) tiles += tile("Performance rating", (pr.cap > 0 ? "≥" : pr.cap < 0 ? "≤" : "") + pr.perf.toFixed(2),
-        "average going in " + pr.avg.toFixed(2) + " · " + (Math.abs(pr.d) < 0.005 ? "played at level" : pr.d > 0 ? "played " + pr.d.toFixed(2) + " above level" : "played " + (-pr.d).toFixed(2) + " below level"));
+      tiles += pr ? tile("Performance rating", pr.perf.toFixed(2),
+        "from points won, " + pr.n + " matches · average going in " + pr.avg.toFixed(2) + " · " + (Math.abs(pr.d) < 0.005 ? "played at level" : pr.d > 0 ? "played " + pr.d.toFixed(2) + " above level" : "played " + (-pr.d).toFixed(2) + " below level"))
+        : tile("Performance rating", "–", "needs point statistics (from 1991)");
       var t10 = rs.filter(function (r) { return r[18] != null && r[18] <= 10; }), e10 = 0, w10 = 0;
       t10.forEach(function (r) { e10 += r[8]; w10 += r[6] ? 1 : 0; });
       tiles += t10.length ? tile("vs top 10", w10 + " / " + t10.length, (w10 / t10.length * 100).toFixed(0) + "% won, " + (e10 / t10.length * 100).toFixed(0) + "% expected · net " + net(w10 - e10) + " wins")
