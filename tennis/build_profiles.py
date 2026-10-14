@@ -114,9 +114,9 @@ for p in sorted(players, key=lambda p: -nrated[p]):
 D = f"{SCR}/site_v8"
 # best single-match performances (Best performances tab): the 100 highest match performance ratings
 # tour-level main draws only: against Challenger/qualifying/Davis-Fed Cup mismatches a near-perfect score is almost expected
-# and the performance shoots up without saying much
+# and the performance shoots up without saying much; for the same reason both players must be rated at least 0.4 going in
 tour_main = lambda r: r[2] not in ("C", "D", "Q", "S") and not (r[4] or "").startswith("Q")
-best = sorted(((p, r) for p in recs for r in recs[p] if r[19] is not None and tour_main(r)), key=lambda pr: -pr[1][19])[:100]
+best = sorted(((p, r) for p in recs for r in recs[p] if r[19] is not None and tour_main(r) and min(r[9], r[14]) >= 0.4), key=lambda pr: -pr[1][19])[:100]
 json.dump([[p] + [r[k] for k in (0, 1, 2, 3, 4, 5, 6, 7, 19, 9, 14, 15, 16)] for p, r in best],
           open(f"{SCR}/site_v8/best_{TOUR}.json", "w"), separators=(",", ":"))    # player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%
 json.dump(dict(tour=TOUR, lam=LAM, slope=round(SLOPE, 4), players=index), open(f"{D}/prof_{TOUR}_index.json", "w"), separators=(",", ":"))
