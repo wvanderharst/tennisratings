@@ -1,4 +1,4 @@
-# One-off: look at what results.tennisdata.com serves for one match page (robots.txt, data requests). Output in the log.
+# One-off: is the match data inside the plain HTML of one results.tennisdata.com page? Output in the log.
 name: Probe tennisdata.com
 on:
   workflow_dispatch:
@@ -15,5 +15,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install playwright==1.47.0 && python -m playwright install --with-deps chromium
       - run: python tools/probe_tennisdata.py ${{ inputs.url }}
