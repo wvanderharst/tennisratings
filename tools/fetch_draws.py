@@ -4,8 +4,8 @@
     python3 tools/fetch_draws.py [OUT.json]        (default: site_v8/draws.json)
 
 Per event: the draw in bracket order (seeds, WC/Q/LL, byes), the completed matches (winner, loser, score), and the
-conditions (surface, indoor, level, best of) from the most recent edition in the match data. Challengers and WTA 125s
-are skipped (most of their players are not in the odds data). A handful of requests per run; Tennis Abstract pages by
+conditions (surface, indoor, level, best of) from the most recent edition in the match data. Knockout draws only:
+round-robin events (Tour Finals, Next Gen) and team events (United Cup, Davis/BJK Cup) are skipped, as are Challengers and WTA 125s (most of their players are not in the odds data). A handful of requests per run; Tennis Abstract pages by
 Jeff Sackmann (tennisabstract.com)."""
 import csv, datetime, glob, html, json, os, re, sys, time, unicodedata, urllib.request
 
@@ -123,6 +123,9 @@ def main():
             tour = "wta" if t.count("wplayer.cgi") > t.count("/player.cgi") else "atp"
         if not draw: continue
         res = parse_results(page)
+        up = jsvar(page, "upcomingSingles") or ""
+        if any(r[0] == "RR" for r in res) or re.search(r"(^|>)\s*RR:", up) or re.search(r"Finals|Cup\b|Next Gen", title):
+            print(f"  {title}: round robin / team event, skipped", flush=True); continue
         if any(r[0] == "F" for r in res):
             print(f"  {title}: final played, skipped", flush=True); continue
         ev = re.sub(r"^\d{4}\s+(ATP|WTA)?\s*", "", title).strip()
