@@ -385,7 +385,7 @@
   }
 
   // ---------------- tabs ----------------
-  var panels = { chart: document.getElementById("panelChart"), rankings: document.getElementById("panelRankings"), odds: document.getElementById("panelOdds"), profile: document.getElementById("panelProfile"), peaks: document.getElementById("panelPeaks"), best: document.getElementById("panelBest") };
+  var panels = { chart: document.getElementById("panelChart"), rankings: document.getElementById("panelRankings"), odds: document.getElementById("panelOdds"), profile: document.getElementById("panelProfile"), peaks: document.getElementById("panelPeaks"), best: document.getElementById("panelBest"), draws: document.getElementById("panelDraws") };
   var tabBtns = Array.prototype.slice.call(document.querySelectorAll("#tabs button"));
   var chartHost = document.getElementById("chartHost");
   function showTab(tab) {
@@ -396,6 +396,7 @@
     panels.profile.hidden = tab !== "profile";
     panels.peaks.hidden = tab !== "peaks";
     panels.best.hidden = tab !== "best";
+    panels.draws.hidden = tab !== "draws";
     var sub = document.getElementById("subtitle");
     if (tab === "men" || tab === "women") {
       var tour = tab === "men" ? "atp" : "wta";
@@ -407,6 +408,9 @@
     } else if (tab === "rankings") {
       sub.textContent = "Every active player ranked on what the full model expects them to win: average chance against the current No. 5\u201315";
       renderRankings();
+    } else if (tab === "draws") {
+      sub.textContent = "Ongoing tournaments: each player's chance to reach every round and win, from the draw and the results so far";
+      renderDraws();
     } else if (tab === "best") {
       sub.textContent = "The 100 best single-match performances: the rating the points won in one match correspond to";
       renderBest();
@@ -649,6 +653,110 @@
         s.addEventListener("click", function () { openProfile(tour, s.dataset.n); window.scrollTo(0, 0); });
       });
     }).catch(function (e) { bpTable.innerHTML = '<tr><td class="loading">Couldn\u2019t load: ' + esc(e.message) + "</td></tr>"; });
+  }
+
+  // ---------------- live draws tab ----------------
+  // Chance to reach every round of an ongoing event: exact over the bracket. reach[r][i] = chance that the player in
+  // slot i wins their block of 2^r slots; to win the next block they beat whoever comes out of the neighbouring block.
+  // Played matches are decided (1/0); byes always lose; unknown players get a low default strength.
+  var dr = { ev: null, all: false }, drSel = document.getElementById("drEvent"), drTable = document.getElementById("drTable");
+  var drAll = document.getElementById("drAll");
+  drAll.addEventListener("change", function () { dr.all = drAll.checked; renderDraws(); });
+  drSel.addEventListener("change", function () { dr.ev = drSel.value; renderDraws(); });
+  var nrm = function (s) { return (s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); };
+  function drPlayers(D) {
+    if (!D._byNorm) {
+      D._byNorm = {}; D.players.forEach(function (p) { D._byNorm[nrm(p.n)] = p; });
+      var srt = D.players.slice().sort(function (a, b) { return b.g - a.g; });
+      D._fallback = srt[Math.floor(srt.length * 0.9)];            // unknown player: about the 90th percentile of the list
+    }
+  }
+  var RNAME = function (n) { return n === 1 ? "W" : n === 2 ? "F" : n === 4 ? "SF" : n === 8 ? "QF" : "R" + n; };
+  function drCompute(E, D) {
+    drPlayers(D);
+    var N = E.draw.length, R = Math.round(Math.log(N) / Math.LN2), unk = 0;
+    var P = E.draw.map(function (s, i) {
+      if (s[0] === "Bye") return null;
+      var p = D._byNorm[nrm(s[0])];
+      if (p) return p;
+      unk++; return Object.assign({}, D._fallback, { n: s[0], i: -1 - i, rk: null, c: 0, cl: 0, unknown: true });
+    });
+    var pre = (D._presets || D.presets || []).filter(function (x) { return nrm(x.t) === nrm(E.name); })[0];
+    var o = { surf: E.surf, indoor: !!E.indoor, lvl: E.lvl === "A" && pre && pre.l === "M" ? "M" : E.lvl, bo: E.bo, speed: pre ? pre.v || 0 : 0 };
+    var won = {};
+    E.results.forEach(function (r) { won[nrm(r[1]) + "|" + nrm(r[2])] = 1; won[nrm(r[2]) + "|" + nrm(r[1])] = 0; });
+    var cache = {};
+    function pw(i, j) {                                          // chance slot i beats slot j
+      if (!P[j]) return 1; if (!P[i]) return 0;
+      var k = nrm(E.draw[i][0]) + "|" + nrm(E.draw[j][0]);
+      if (k in won) return won[k];
+      var key = i + "_" + j;
+      if (!(key in cache)) { cache[key] = compute(D, P[i], P[j], o).p; cache[j + "_" + i] = 1 - cache[key]; }
+      return cache[key];
+    }
+    var reach = [E.draw.map(function (s) { return 1; })];
+    for (var r = 0; r < R; r++) {
+      var prev = reach[r], nxt = new Array(N), b = 1 << r;
+      for (var i = 0; i < N; i++) {
+        if (!prev[i]) { nxt[i] = 0; continue; }
+        var lo = (Math.floor(i / b) ^ 1) * b, s = 0;            // the neighbouring block
+        for (var j = lo; j < lo + b; j++) if (prev[j]) s += prev[j] * pw(i, j);
+        nxt[i] = prev[i] * s;
+      }
+      reach.push(nxt);
+    }
+    return { P: P, reach: reach, R: R, N: N, o: o, unk: unk };
+  }
+  function renderDraws() {
+    drTable.innerHTML = '<tr><td class="loading" style="text-align:center">Loading&hellip;</td></tr>';
+    load("draws.json").then(function (DR) {
+      var evs = DR.events || [];
+      if (!evs.length) { drTable.innerHTML = '<tr><td class="loading">No ongoing tour events right now.</td></tr>'; document.getElementById("drInfo").textContent = ""; return; }
+      if (!drSel.options.length) {
+        var html = "";
+        [["atp", "Men"], ["wta", "Women"]].forEach(function (g) {
+          var L = evs.map(function (e, i) { return [e, i]; }).filter(function (x) { return x[0].tour === g[0]; });
+          if (!L.length) return;
+          html += '<optgroup label="' + g[1] + '">' + L.map(function (x) { return '<option value="' + x[1] + '">' + esc(x[0].name) + "</option>"; }).join("") + "</optgroup>";
+        });
+        drSel.innerHTML = html;
+        var lv = { G: 0, M: 1, A: 2 };
+        dr.ev = dr.ev != null ? dr.ev : String(evs.map(function (e, i) { return [e, i]; })
+          .sort(function (a, b) { return (lv[a[0].lvl] - lv[b[0].lvl]) || (b[0].draw.length - a[0].draw.length); })[0][1]);
+      }
+      drSel.value = dr.ev;
+      var E = evs[+dr.ev];
+      return loadOdds(E.tour).then(function (D) {
+        if (evs[+dr.ev] !== E) return;
+        var X = drCompute(E, D), reach = X.reach, R = X.R, N = X.N;
+        // columns: rounds not yet decided for everyone
+        var cols = [];
+        for (var r = 1; r <= R; r++) {
+          var open = reach[r].some(function (v) { return v > 1e-9 && v < 1 - 1e-9; });
+          if (open || r === R) cols.push(r);
+        }
+        var alive = function (i) { return X.P[i] && reach[cols[0] - 1][i] > 1e-9; };
+        var idx = []; for (var i = 0; i < N; i++) if (X.P[i] && (dr.all || alive(i))) idx.push(i);
+        if (!dr.all) idx.sort(function (a, b) { return reach[R][b] - reach[R][a] || reach[cols[0]][b] - reach[cols[0]][a]; });
+        var surfName = (X.o.indoor ? "indoor " : "") + E.surf.toLowerCase();
+        document.getElementById("drInfo").innerHTML = esc(E.title) + " &middot; " + surfName + (X.o.speed ? " (" + (X.o.speed > 0 ? "+" : "\u2212") +
+          Math.round(Math.abs(Math.exp(X.o.speed) - 1) * 100) + "% aces)" : "") + " &middot; best of " + E.bo + " &middot; draw " + DR.asof +
+          ' &middot; <a href="' + esc(E.url) + '" target="_blank" rel="noopener">source</a>';
+        var head = "<thead><tr><th class=\"l\"><button tabindex=\"-1\">" + (dr.all ? "Slot" : "#") + '</button></th><th class="l"><button tabindex="-1">Player</button></th><th class="l"><button tabindex="-1">Seed</button></th>' +
+          cols.map(function (r) { return '<th class="' + (r === R ? "sorted" : "") + '"><button tabindex="-1">' + RNAME(N >> r) + "</button></th>"; }).join("") + "</tr></thead>";
+        var pct = function (v) { return v >= 0.9995 ? "100%" : v < 0.0005 ? (v > 0 ? "<0.1%" : "\u2013") : (v * 100).toFixed(v < 0.1 ? 1 : 0) + "%"; };
+        var body = idx.map(function (i, k) {
+          var p = X.P[i], out = !alive(i);
+          return '<tr' + (out ? ' style="opacity:.45"' : "") + (dr.all && i % 2 === 0 && i > 0 && i % (N / 4) === 0 ? ' class="grp"' : "") + '><td class="pos l">' + (dr.all ? i + 1 : k + 1) + '</td><td class="l">' +
+            (p.unknown ? esc(p.n) + " *" : '<span class="pname link" data-n="' + esc(p.n) + '">' + esc(p.n) + "</span>") + '</td><td class="l">' + esc(E.draw[i][1] === "?" ? "" : E.draw[i][1]) + "</td>" +
+            cols.map(function (r) { var v = reach[r][i]; return '<td class="num"' + (r === R ? ' style="font-weight:700"' : "") + ">" + pct(v) + "</td>"; }).join("") + "</tr>";
+        }).join("");
+        drTable.innerHTML = head + "<tbody>" + body + "</tbody>" + (X.unk ? '<caption style="caption-side:bottom;text-align:left;font-size:12px;padding-top:6px">* not in the model\u2019s current ratings: default (low) strength</caption>' : "");
+        Array.prototype.forEach.call(drTable.querySelectorAll(".pname.link"), function (s) {
+          s.addEventListener("click", function () { openProfile(E.tour, s.dataset.n); window.scrollTo(0, 0); });
+        });
+      });
+    }).catch(function (e) { drTable.innerHTML = '<tr><td class="loading">Couldn\u2019t load the draws: ' + esc(e.message) + "</td></tr>"; });
   }
 
   // ---------------- match odds tab ----------------
@@ -1187,7 +1295,7 @@
 
   // ---------------- boot ----------------
   var start = (location.hash || "").replace("#", "");
-  if (["men", "women", "rankings", "peaks", "best", "odds", "profile"].indexOf(start) < 0) start = "men";
+  if (["men", "women", "rankings", "peaks", "best", "draws", "odds", "profile"].indexOf(start) < 0) start = "men";
   if (start !== "men") load("traj_atp.json");   // warm the default chart in the background
   showTab(start);
   window.__oddsCompute = function (tour, a, b, o) { var D = ODDS[tour]; return compute(D, findP(D, a), findP(D, b), o).p; };

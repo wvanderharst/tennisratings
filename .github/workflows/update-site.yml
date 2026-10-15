@@ -1,14 +1,15 @@
 # Weekly (Saturday): download the latest TennisMyLife data, commit it to the repository, update the ratings and
-# publish the site to GitHub Pages.
+# publish the site to GitHub Pages. Every 6 hours in between: refresh only the draws of the ongoing tournaments
+# (Tennis Abstract) on the last published site (the 'Live draws' tab computes the chances in the browser).
 # Needs Settings -> Pages -> Source: "GitHub Actions". Runs from the default branch.
 # Incremental: the replay checkpoints (state/) are kept in the Actions cache, so a run only replays the last weeks.
-# GitHub deletes cache entries unused for 7 days, so a small Wednesday job touches the cache in between.
+# GitHub deletes cache entries unused for 7 days; the 6-hourly draws job also touches the checkpoint cache.
 # Without a usable cache (first run, code changed, cache gone) the run is a full rebuild.
 name: Update tennis ratings
 on:
   schedule:
     - cron: "17 5 * * 6"        # Saturday 05:17 UTC: update + publish
-    - cron: "17 5 * * 3"        # Wednesday 05:17 UTC: keep the checkpoint cache alive (no update)
+    - cron: "41 1,7,13,19 * * *"  # every 6 hours: refresh the draws of the ongoing tournaments only
   workflow_dispatch:             # "Run workflow" button on the Actions tab
     inputs:
       full:
@@ -20,19 +21,35 @@ on:
     paths-ignore: ["**.md"]
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
-  keep-cache:
-    if: github.event.schedule == '17 5 * * 3'
+  draws:
+    if: github.event.schedule == '41 1,7,13,19 * * *'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions: { contents: read, actions: read }
     steps:
-      - name: Touch the replay checkpoints
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Touch the replay checkpoints (keeps the cache alive)
         uses: actions/cache/restore@v4
         with:
           path: state
           key: replay-state-${{ github.run_id }}
           restore-keys: replay-state-
+      - name: Restore the last published site
+        uses: actions/cache/restore@v4
+        with:
+          path: _site
+          key: site-${{ github.run_id }}
+          restore-keys: site-
+      - name: Refresh the draws
+        run: |
+          test -f _site/tennis_ratings.html || { echo "no published site in the cache yet (it is saved by the weekly build)"; exit 1; }
+          python3 tools/fetch_draws.py _site/draws.json
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
   build:
-    if: github.event.schedule != '17 5 * * 3'
+    if: github.event.schedule != '41 1,7,13,19 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions: { contents: write }       # commits the updated data files
@@ -58,6 +75,7 @@ jobs:
           lscpu | grep -m1 "Model name"; python3 -c "import sys, numpy, scipy; print('python', sys.version.split()[0], 'numpy', numpy.__version__, 'scipy', scipy.__version__)"
           mkdir -p site_v8 work
           python3 tennis/update_data.py --rebuild
+          python3 tools/fetch_draws.py || echo "::warning::draws not refreshed"
           mkdir -p "$GITHUB_WORKSPACE/_site"
           cp site_v8/*.json site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/"
           cp site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/index.html"
@@ -67,6 +85,11 @@ jobs:
         with:
           path: state
           key: replay-state-${{ github.run_id }}
+      - name: Keep the site for the draws refreshes
+        uses: actions/cache/save@v4
+        with:
+          path: _site
+          key: site-${{ github.run_id }}
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
       - name: Commit the updated data
@@ -82,7 +105,8 @@ jobs:
           git commit -m "Data update: $(cat last_update.txt)"
           for i in 1 2 3; do git push && exit 0; git pull --rebase --autostash -X theirs; done; exit 1   # someone pushed meanwhile: keep this run's (newest) data
   deploy:
-    needs: build
+    needs: [build, draws]
+    if: always() && (needs.build.result == 'success' || needs.draws.result == 'success')
     runs-on: ubuntu-latest
     permissions: { pages: write, id-token: write }
     environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }

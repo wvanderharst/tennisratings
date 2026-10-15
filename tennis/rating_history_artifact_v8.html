@@ -346,6 +346,7 @@
     <button role="tab" id="tab-peaks" data-tab="peaks" aria-selected="false">All-time peaks</button>
     <button role="tab" id="tab-best" data-tab="best" aria-selected="false">Best performances</button>
     <button role="tab" id="tab-odds" data-tab="odds" aria-selected="false">Match odds</button>
+    <button role="tab" id="tab-draws" data-tab="draws" aria-selected="false">Live draws</button>
     <button role="tab" id="tab-profile" data-tab="profile" aria-selected="false">Player profile</button>
   </nav>
 
@@ -501,6 +502,28 @@
       mismatches make a near-perfect score almost expected), and both players rated at least 0.4 going in. <strong>Top 20 vs top 20</strong>: only matches between two players
       in the official ATP/WTA top 20 at the time (the #number next to a name). Needs point statistics (men and women from about 1991). <strong>Above rating</strong>
       is how far the performance was above the player's rating going in. Click a name for the player's profile.
+    </div>
+  </section>
+
+  <section id="panelDraws" hidden>
+    <div class="card">
+      <div class="rk-top">
+        <div class="toolbar-group">
+          <select id="drEvent" class="pf-select" aria-label="Tournament"></select>
+          <label class="switchrow"><input type="checkbox" id="drAll"><span class="switch"></span>Full draw, in bracket order</label>
+        </div>
+        <div id="drInfo" class="muted-line" style="font-size:12.5px;color:var(--ink-soft)"></div>
+      </div>
+      <div class="tablewrap"><table class="rk" id="drTable"></table></div>
+    </div>
+    <div class="note">
+      <strong>Chance to reach each round</strong> of the ongoing tournaments, computed from the draw: every possible
+      path through the bracket, with the same pre-match odds as the Match odds tab (surface, court speed, best of, ratings,
+      closing, clutch, head-to-head, age, and the 3% chance that a match ends early). Matches already played count as
+      decided, so a player's chances only depend on the opponents they can still meet. Players the model has no current
+      rating for (outside the odds list, or qualifiers not yet known) get a low default strength and are marked with *.
+      Draws and results from <a href="https://www.tennisabstract.com/" target="_blank" rel="noopener">Tennis Abstract</a>,
+      refreshed every few hours; ratings as of the last weekly update.
     </div>
   </section>
 
