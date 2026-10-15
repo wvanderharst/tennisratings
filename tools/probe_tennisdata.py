@@ -11,15 +11,13 @@ chunks = re.findall(r'self\.__next_f\.push\(\[\d+,\s*"((?:[^"\\]|\\.)*)"\]\)', h
 payload = "".join(json.loads('"' + c + '"') for c in chunks)
 print("next_f chunks", len(chunks), "| payload chars", len(payload))
 txt = payload or html
-for kw in ("shotQuality", "shot_quality", "Shot Quality", "serveSpeed", "serve_speed", "forehand", "Forehand", "backhand", "Backhand",
-           "rally", "pointByPoint", "point_by_point", "points", "aces", "Aces", "firstServe", "winners", "unforced", "Hawk", "spin", "depth"):
-    n = txt.count(kw)
-    if n: print(f"  {kw!r}: {n}")
-for kw in ("orehand", "uality", "point"):
-    print(f"\n==== contexts for {kw!r}")
-    for m in list(re.finditer(kw, txt))[:6]:
-        print("  ..." + txt[max(0, m.start() - 250): m.end() + 250].replace("\n", " ") + "...")
-# largest JSON-looking objects in the payload
-objs = sorted(re.findall(r'\{"[^{}]{200,}\}', txt), key=len, reverse=True)[:3]
-print("\n==== largest flat objects")
-for o in objs: print("  ", o[:1500], "\n")
+# keys that carry numbers (the actual match values, not the translated labels)
+from collections import Counter
+num = Counter(m.group(1) for m in re.finditer(r'"([A-Za-z_]+)":\s*-?\d+(?:\.\d+)?[,}\]]', txt))
+print("==== numeric keys (key: count)\n  " + ", ".join(f"{k}:{n}" for k, n in num.most_common(80)))
+for kw in ("shotQualityForehand", "forehand", "rallyLength", "speed", "Sinner", "Alcaraz", "playerName", "lastName"):
+    hits = [m for m in re.finditer(re.escape(kw), txt) if re.match(r'"\s*:\s*[-\d\[{]', txt[m.end():m.end() + 4])]
+    print(f"\n==== value contexts for {kw!r}: {len(hits)}")
+    for m in hits[:3]: print("  ..." + txt[max(0, m.start() - 300): m.end() + 400] + "...")
+# where are the player names? (first person-like "firstName"/"name" values)
+for m in list(re.finditer(r'"(?:firstName|lastName|fullName|name)":"([^"]{3,40})"', txt))[:15]: print("  name:", m.group(1))
