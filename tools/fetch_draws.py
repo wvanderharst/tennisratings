@@ -115,8 +115,12 @@ def main():
             print(f"  {l}: {e}", flush=True); continue
         title = re.search(r"<title>Tennis Abstract:\s*(.*?)\s*Results and Forecast", page)
         title = title.group(1) if title else name
-        tour = "wta" if "wplayer.cgi" in page else "atp"
         draw = parse_draw(page)
+        if re.search(r"\bWTA\b|Women", title): tour = "wta"
+        elif re.search(r"\bATP\b|Men", title): tour = "atp"
+        else:     # the draw's own player links (the site menu links to both tours)
+            t = jsvar(page, "projCurrent") or ""
+            tour = "wta" if t.count("wplayer.cgi") > t.count("/player.cgi") else "atp"
         if not draw: continue
         res = parse_results(page)
         if any(r[0] == "F" for r in res):
@@ -136,7 +140,7 @@ def main():
               f"level {lvl}, conditions from {'data ' + c['d'] if c else 'default'}", flush=True)
         time.sleep(1)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(dict(asof=datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"), source="Tennis Abstract (tennisabstract.com)",
+    json.dump(dict(asof=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), source="Tennis Abstract (tennisabstract.com)",
                    events=events), open(OUT, "w"), separators=(",", ":"))
     print(f"{len(events)} events -> {OUT}")
 
