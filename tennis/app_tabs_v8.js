@@ -678,6 +678,10 @@
     }
   }
   var RNAME = function (n) { return n === 1 ? "W" : n === 2 ? "F" : n === 4 ? "SF" : n === 8 ? "QF" : "R" + n; };
+  // Rating error that persists through an event (relative to the rating at its start; ratings stay fixed during the
+  // event): covariance of a player's performance residuals in consecutive matches of the same event, 2016+.
+  var DR_TAU = { atp: 0.128, wta: 0.134 }, DR_SIMS = 20000;
+  function drRng(seed) { var x = seed >>> 0 || 1; return function () { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; }; }
   function drCompute(E, D) {
     drPlayers(D);
     var N = E.draw.length, R = Math.round(Math.log(N) / Math.LN2), unk = 0;
@@ -691,27 +695,71 @@
     var o = { surf: E.surf, indoor: !!E.indoor, lvl: E.lvl === "A" && pre && pre.l === "M" ? "M" : E.lvl, bo: E.bo, speed: pre ? pre.v || 0 : 0 };
     var won = {};
     E.results.forEach(function (r) { won[nrm(r[1]) + "|" + nrm(r[2])] = 1; won[nrm(r[2]) + "|" + nrm(r[1])] = 0; });
-    var cache = {};
-    function pw(i, j) {                                          // chance slot i beats slot j
-      if (!P[j]) return 1; if (!P[i]) return 0;
-      var k = nrm(E.draw[i][0]) + "|" + nrm(E.draw[j][0]);
-      if (k in won) return won[k];
+    var zc = {};
+    function zOf(i, j) {                                         // model logit that slot i beats slot j (calibrated, one match)
       var key = i + "_" + j;
-      if (!(key in cache)) { cache[key] = compute(D, P[i], P[j], o).p; cache[j + "_" + i] = 1 - cache[key]; }
-      return cache[key];
+      if (!(key in zc)) { var pp = compute(D, P[i], P[j], o).p; zc[key] = Math.log(pp / (1 - pp)); zc[j + "_" + i] = -zc[key]; }
+      return zc[key];
     }
-    var reach = [E.draw.map(function (s) { return 1; })];
-    for (var r = 0; r < R; r++) {
-      var prev = reach[r], nxt = new Array(N), b = 1 << r;
-      for (var i = 0; i < N; i++) {
-        if (!prev[i]) { nxt[i] = 0; continue; }
-        var lo = (Math.floor(i / b) ^ 1) * b, s = 0;            // the neighbouring block
-        for (var j = lo; j < lo + b; j++) if (prev[j]) s += prev[j] * pw(i, j);
-        nxt[i] = prev[i] * s;
+    var res = function (i, j) { var k = nrm(E.draw[i][0]) + "|" + nrm(E.draw[j][0]); return k in won ? won[k] : null; };
+    // kappa: logit per rating unit for this event's conditions (numerically, on a few real pairs)
+    var real = []; for (var i0 = 0; i0 < N; i0++) if (P[i0] && !P[i0].unknown) real.push(i0);
+    var kap = 0, nk = 0;
+    for (var t = 0; t + 1 < real.length && nk < 12; t += Math.max(1, Math.floor(real.length / 12))) {
+      var a = P[real[t]], b = P[real[(t + 1) % real.length]];
+      var a2 = Object.assign({}, a, { sv: a.sv + 0.05, rt: a.rt + 0.05 });
+      var p1 = compute(D, a, b, o).p, p2 = compute(D, a2, b, o).p;
+      kap += (Math.log(p2 / (1 - p2)) - Math.log(p1 / (1 - p1))) / 0.05; nk++;
+    }
+    kap = nk ? kap / nk : 3.3;
+    var tau = DR_TAU[E.tour] || 0.13, s2 = kap * kap * tau * tau;
+    var infl = Math.sqrt(1 + Math.PI * 2 * s2 / 8);              // keeps each single match's chance as calibrated
+    var c1 = Math.sqrt(1 + Math.PI * s2 / 8);                    // opponent's own form integrated out
+    // who is still in, and their form posterior from the wins already played this week (grid over delta)
+    var alive = new Array(N).fill(false), wins = {};
+    for (var i = 0; i < N; i++) if (P[i]) alive[i] = true;
+    E.results.forEach(function (r) { var w = nrm(r[1]), l = nrm(r[2]);
+      for (var i = 0; i < N; i++) { var n_ = P[i] && nrm(E.draw[i][0]); if (n_ === l) alive[i] = false; if (n_ === w) (wins[i] = wins[i] || []).push(l); } });
+    var slotOf = {}; for (var i2 = 0; i2 < N; i2++) if (P[i2]) slotOf[nrm(E.draw[i2][0])] = i2;
+    var G = 41, grid = [], post = {};
+    for (var g = 0; g < G; g++) grid.push((-4 + 8 * g / (G - 1)) * tau);
+    for (var i3 = 0; i3 < N; i3++) {
+      if (!alive[i3]) continue;
+      var lw = grid.map(function (d) { return -0.5 * d * d / (tau * tau); });
+      (wins[i3] || []).forEach(function (ln) {
+        var j = slotOf[ln]; if (j == null) return;
+        var z = zOf(i3, j) * infl;
+        grid.forEach(function (d, g) { lw[g] -= Math.log1p(Math.exp(-(z + kap * d) / c1)); });
+      });
+      var mx = Math.max.apply(null, lw), cdf = [], acc = 0;
+      lw.forEach(function (v) { acc += Math.exp(v - mx); cdf.push(acc); });
+      post[i3] = cdf.map(function (v) { return v / acc; });
+    }
+    // simulate the rest of the tournament; a player's form delta is the same in every round of one run
+    var cnt = []; for (var r0 = 0; r0 <= R; r0++) cnt.push(new Float64Array(N));
+    var rng = drRng(N * 7919 + E.results.length), dl = new Float64Array(N), cur = new Int32Array(N), nxt = new Int32Array(N);
+    var pick = function (cdf) { var u = rng(), lo = 0; while (lo < G - 1 && cdf[lo] < u) lo++; return grid[lo] + (rng() - 0.5) * 8 * tau / (G - 1); };
+    var NS = N >= 128 ? DR_SIMS / 2 : DR_SIMS;
+    for (var sim = 0; sim < NS; sim++) {
+      for (var k = 0; k < N; k++) { cur[k] = k; dl[k] = post[k] ? pick(post[k]) : 0; }
+      var m = N;
+      for (var r = 1; r <= R; r++) {
+        for (var k2 = 0; k2 < m / 2; k2++) {
+          var a_ = cur[2 * k2], b_ = cur[2 * k2 + 1], w;
+          if (!P[b_]) w = a_; else if (!P[a_]) w = b_;
+          else {
+            var kn = res(a_, b_);
+            if (kn != null) w = kn ? a_ : b_;
+            else w = rng() < 1 / (1 + Math.exp(-(zOf(a_, b_) * infl + kap * (dl[a_] - dl[b_])))) ? a_ : b_;
+          }
+          nxt[k2] = w; cnt[r][w] += 1;
+        }
+        m /= 2; var tmp = cur; cur = nxt; nxt = tmp;
       }
-      reach.push(nxt);
     }
-    return { P: P, reach: reach, R: R, N: N, o: o, unk: unk };
+    var reach = [E.draw.map(function () { return 1; })];
+    for (var r2 = 1; r2 <= R; r2++) reach.push(Array.prototype.map.call(cnt[r2], function (v) { return v / NS; }));
+    return { P: P, reach: reach, R: R, N: N, o: o, unk: unk, kap: kap, tau: tau, alive: alive };
   }
   function renderDraws() {
     drTable.innerHTML = '<tr><td class="loading" style="text-align:center">Loading&hellip;</td></tr>';
@@ -741,7 +789,7 @@
           var open = reach[r].some(function (v) { return v > 1e-9 && v < 1 - 1e-9; });
           if (open || r === R) cols.push(r);
         }
-        var alive = function (i) { return X.P[i] && reach[cols[0] - 1][i] > 1e-9; };
+        var alive = function (i) { return X.P[i] && X.alive[i]; };
         var idx = []; for (var i = 0; i < N; i++) if (X.P[i] && (dr.all || alive(i))) idx.push(i);
         if (!dr.all) idx.sort(function (a, b) { return reach[R][b] - reach[R][a] || reach[cols[0]][b] - reach[cols[0]][a]; });
         var surfName = (X.o.indoor ? "indoor " : "") + E.surf.toLowerCase();

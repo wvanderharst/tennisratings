@@ -517,10 +517,14 @@
       <div class="tablewrap"><table class="rk" id="drTable"></table></div>
     </div>
     <div class="note">
-      <strong>Chance to reach each round</strong> of the ongoing tournaments, computed from the draw: every possible
-      path through the bracket, with the same pre-match odds as the Match odds tab (surface, court speed, best of, ratings,
-      closing, clutch, head-to-head, age, and the 3% chance that a match ends early). Matches already played count as
-      decided, so a player's chances only depend on the opponents they can still meet. Players the model has no current
+      <strong>Chance to reach each round</strong> of the ongoing tournaments: the rest of the draw is simulated 10,000&ndash;20,000
+      times with the same pre-match odds as the Match odds tab (surface, court speed, best of, ratings, closing, clutch,
+      head-to-head, age, consistency, and the 3% chance that a match ends early). Matches already played count as decided.
+      <strong>Form carries through the event</strong>: ratings stay fixed during a tournament, but a player's true level that
+      week can be above or below it (by about &plusmn;0.13 rating points, measured from how a player's performances in the same
+      event go together). Each run gives every player one such form value for all their matches, and for players still in
+      the draw it is updated from the matches they have already won, so a player who keeps winning, and was perhaps
+      underrated, gets better odds in the next rounds too. A single match's chance stays as calibrated as in the Match odds tab. Players the model has no current
       rating for (outside the odds list, or qualifiers not yet known) get a low default strength and are marked with *.
       Draws and results from <a href="https://www.tennisabstract.com/" target="_blank" rel="noopener">Tennis Abstract</a>,
       refreshed every few hours; ratings as of the last weekly update.
