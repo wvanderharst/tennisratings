@@ -678,9 +678,10 @@
     }
   }
   var RNAME = function (n) { return n === 1 ? "W" : n === 2 ? "F" : n === 4 ? "SF" : n === 8 ? "QF" : "R" + n; };
-  // Rating error that persists through an event (relative to the rating at its start; ratings stay fixed during the
-  // event): covariance of a player's performance residuals in consecutive matches of the same event, 2016+.
-  var DR_TAU = { atp: 0.128, wta: 0.134 }, DR_SIMS = 20000;
+  // Form that persists through an event (relative to the rating at its start; ratings stay fixed during the event).
+  // Fitted on past tournaments (2010+): predicting a player's later matches in an event from the frozen ratings plus
+  // the form implied by the wins already played; best log loss at tau ~0.13-0.16 (men), ~0.20-0.25 (women).
+  var DR_TAU = { atp: 0.15, wta: 0.21 }, DR_SIMS = 20000;
   function drRng(seed) { var x = seed >>> 0 || 1; return function () { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; }; }
   function drCompute(E, D) {
     drPlayers(D);
