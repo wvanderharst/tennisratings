@@ -363,9 +363,15 @@
   }
   var ODDS = {};
   function loadOdds(tour) {
-    return load("odds_" + tour + ".json").then(function (d) {
+    return Promise.all([load("odds_" + tour + ".json"), load("cons_" + tour + ".json").catch(function () { return null; })]).then(function (dd) {
+      var d = dd[0], cons = dd[1];
       if (!d._prep) {
         d._prep = true;
+        // consistency (score-driven variance of match performances, consistency_gas.py): p.cv = variance, p.csd = swing
+        if (cons) {
+          d.cons = cons;
+          d.players.forEach(function (p) { var x = cons.players[p.n]; if (x) { p.csd = x[0]; p.cv = x[0] * x[0]; p.cpct = x[2]; } });
+        }
         d.byName = {}; d.players.forEach(function (p, i) { p.i = i; d.byName[p.n.toLowerCase()] = p; });
         d.h2hMap = {};
         // display only: each surface rating put on the general-rating scale by matching its average
@@ -878,7 +884,14 @@
       { k: "speed", z: term("speedw_x_ace_gap") },
       { k: "top4", z: term("slam_x_atp_top4") }
     ];
-    var z = parts.reduce(function (s, p) { return s + p.z; }, 0), pDone = sig(z);
+    var z = parts.reduce(function (s, p) { return s + p.z; }, 0);
+    // consistency: two erratic players -> less extreme odds, two steady ones -> more extreme (weight cons.k, see consistency_gas.py)
+    if (D.cons && D.cons.k) {
+      var V0 = D.cons.v0, va = A.cv != null ? A.cv : V0, vb = B.cv != null ? B.cv : V0;
+      var zc2 = z / Math.sqrt(Math.max(0.2, 1 + D.cons.k * (va + vb - 2 * V0) / (2 * V0)));
+      parts.push({ k: "cons", z: zc2 - z }); z = zc2;
+    }
+    var pDone = sig(z);
     // about 3% of matches end in a retirement or walkover, and then strength barely counts: the chance to ADVANCE
     // the share is fixed at RET_RISK (3%) for every match; the slope stays as fitted (C.ret)
     var R = C.ret || { r_slam: 0, b_slam: 0, r_other: 0, b_other: 0 }, rr = RET_RISK, bb = o.lvl === "G" ? R.b_slam : R.b_other;
@@ -928,13 +941,15 @@
       height: ["Height on a fast court", (A.ht || "?") + " vs " + (B.ht || "?") + " cm"],
       speed: ["Court speed × serve", "aces ×" + Math.exp(A.ace).toFixed(2) + " vs ×" + Math.exp(B.ace).toFixed(2) + " of average, on a " + (o.speed > 0 ? "faster" : "slower") + "-than-standard court"],
       top4: [(C.tour === "atp" ? "ATP" : "WTA") + " top-4 at a Slam", "elite players lift at Slams"],
+      cons: ["Consistency", D.cons ? "match-to-match swing \u00b1" + (A.csd != null ? A.csd.toFixed(2) : "?") + " vs \u00b1" + (B.csd != null ? B.csd.toFixed(2) : "?") +
+        " (typical \u00b1" + D.cons.sd0.toFixed(2) + ") \u00b7 steadier players make the odds more extreme, erratic ones less" : ""],
       ret: ["Retirement or walkover risk", (R.rr * 100).toFixed(1) + "% of such matches end early, and then the result is close to a coin flip \u00b7 " + A.n.split(" ").slice(-1)[0] + " wins " + (R.pDone * 100).toFixed(1) + "% if the match is completed"],
       profile: ["Serve & return profile", A.sv !== undefined ? "serve " + sgn(A.sv, 2) + " vs " + sgn(B.sv, 2) + ", return " + sgn(A.rt, 2) + " vs " + sgn(B.rt, 2) + " \u00b7 the better server outperforms the points-based rating, most in close matches" : ""],
       sr: ["Serve & return", A.sv !== undefined ? "serve " + sgn(A.sv, 2) + " vs " + sgn(B.sv, 2) + ", return " + sgn(A.rt, 2) + " vs " + sgn(B.rt, 2) + " (separate serve and return ratings)" : ""]
     };
     var zc = 0, rows = "";
     R.parts.forEach(function (pt) {
-      var always = pt.k === "rating" || pt.k === "closing" || pt.k === "h2h" || pt.k === "clutch" || pt.k === "ret";
+      var always = pt.k === "rating" || pt.k === "closing" || pt.k === "h2h" || pt.k === "clutch" || pt.k === "ret" || pt.k === "cons";
       if (!always && Math.abs(pt.z) < 1e-9) return;
       var before = sig(zc); zc += pt.z; var d = (sig(zc) - before) * 100;
       var w = Math.min(Math.abs(d) / 30, 1) * 45;
@@ -1114,7 +1129,9 @@
     pfIndex(tour).then(function (d) {
       var x = d._by[name.toLowerCase()];
       if (!x) { pfHead.innerHTML = '<div class="pf-empty">' + esc(name) + ' has fewer than 10 rated matches in the data.</div>'; hideCards(); return; }
-      return load("prof_" + tour + "_" + x[1] + ".json").then(function (part) {
+      return Promise.all([load("prof_" + tour + "_" + x[1] + ".json"), load("cons_" + tour + ".json").catch(function () { return null; })]).then(function (pp) {
+        var part = pp[0];
+        pf.cons = pp[1] ? pp[1].players[x[0]] || null : null; pf.cons0 = pp[1] ? pp[1].sd0 : null;
         pf.name = x[0]; pf.recs = part[x[0]] || []; pf.idx = x; pf.slope = d.slope || 3; pf.calFrom = ""; pf.calTo = ""; renderProfileBody();
       });
     }).catch(function (e) { pfHead.innerHTML = '<div class="pf-empty">Couldn’t load the profile: ' + esc(e.message) + "</div>"; });
@@ -1158,6 +1175,8 @@
         tiles += tile("Closing · Clutch", sgn(P.c, 2) + " · " + sgn(P.cl, 3), "set finishing · deciding sets");
       } else if (now != null) tiles += tile("Rating after last match", now.toFixed(2), "not active in the past year");
       if (peak) tiles += tile("Career peak", peak.v.toFixed(2), fmtDate(peak.d));
+      if (pf.cons) tiles += tile("Consistency", "\u00b1" + pf.cons[0].toFixed(2), (pf.cons[2] != null ? "steadier than " + Math.round(pf.cons[2] * 100) + "% of active players" :
+        "match-to-match swing") + " \u00b7 typical \u00b1" + pf.cons0.toFixed(2));
       var X = pf.idx;   // [.., slam entries, slams won, slams predicted, events, titles, titles predicted]
       if (X && X.length >= 11) {
         tiles += tile("Grand Slams", X[6] + " won", (X[7]).toFixed(1) + " predicted · " + X[5] + " played");
@@ -1180,13 +1199,15 @@
       if (r[17]) { s.d += r[10]; s.ds += r[11]; s.dr += r[12]; s.end = r[9] + r[10]; s.n++; }
     });
     var cls = function (v) { return Math.abs(v) < 0.0005 ? "num" : v > 0 ? "num up" : "num dn"; };
-    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Performance</button></th><th><button>Δ Rating</button></th><th><button>Age &amp; layoffs</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th></tr></thead><tbody>" +
+    var consY = {}; if (pf.cons) pf.cons[3].forEach(function (h) { consY[String(h[0])] = h[1]; });
+    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Performance</button></th><th><button>Δ Rating</button></th><th><button>Age &amp; layoffs</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th><th><button>Consistency</button></th></tr></thead><tbody>" +
       order.slice().reverse().map(function (y, k, rev) {
         // rating change between season ends that did not come from the matches (age drift, decay during layoffs)
         var s = ys[y], prevY = rev[k + 1], prev = prevY ? ys[prevY] : null, dr = prev && prev.end != null && s.end != null && s.n ? s.end - prev.end - s.d : null, pr = perfOf(R.filter(function (r) { return r[0].slice(0, 4) === y; }));
         return '<tr><td class="l">' + y + '</td><td class="num">' + s.w + "–" + s.l + '</td><td class="num">' + (s.end != null ? s.end.toFixed(3) : "–") +
           '</td><td class="' + (pr ? cls(pr.perf - pr.avg) : "num") + '" title="' + (pr ? "average rating going in " + pr.avg.toFixed(3) : "") + '">' + (pr ? (pr.cap > 0 ? "≥" : pr.cap < 0 ? "≤" : "") + pr.perf.toFixed(3) : "–") +
-          '</td><td class="' + cls(s.d) + '">' + (s.n ? sgn(s.d, 3) : "–") + '</td><td class="' + (dr == null ? "num" : cls(dr)) + '" style="opacity:.75">' + (dr == null ? "–" : sgn(dr, 3)) + '</td><td class="' + cls(s.ds) + '">' + (s.n ? sgn(s.ds, 3) : "–") + '</td><td class="' + cls(s.dr) + '">' + (s.n ? sgn(s.dr, 3) : "–") + "</td></tr>";
+          '</td><td class="' + cls(s.d) + '">' + (s.n ? sgn(s.d, 3) : "–") + '</td><td class="' + (dr == null ? "num" : cls(dr)) + '" style="opacity:.75">' + (dr == null ? "–" : sgn(dr, 3)) + '</td><td class="' + cls(s.ds) + '">' + (s.n ? sgn(s.ds, 3) : "–") + '</td><td class="' + cls(s.dr) + '">' + (s.n ? sgn(s.dr, 3) : "–") +
+          '</td><td class="num" title="match-to-match swing at the end of the season (lower = steadier)">' + (consY[y] != null ? "\u00b1" + consY[y].toFixed(2) : "–") + "</td></tr>";
       }).join("") + "</tbody>";
     document.getElementById("pfSeasonsCard").hidden = false;
     pfYear.innerHTML = '<option value="">All seasons</option>' + order.slice().reverse().map(function (y) { return '<option value="' + y + '">' + y + "</option>"; }).join("");

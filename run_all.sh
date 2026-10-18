@@ -22,6 +22,7 @@ tour() {
   $py odds_export_sr.py $T              # -> work/odds_data_${T}_sr.json   (current ratings, corrections, odds constants)
   $py build_traj_sr.py $T               # -> work/traj_data_${T}_sr.json   (rating history charts)
   $py build_profiles.py $T              # -> site_v8/prof_${T}_*.json     (player profile pages)
+  $py consistency_gas.py $T             # -> site_v8/cons_${T}.json       (consistency: score-driven variance)
   $py expect_titles_haz.py $T           # -> work/titles_expected_$T.json, title_chances_$T.json
   $py slam_analysis.py $T               # -> work/slam_eve_$T.json
 }

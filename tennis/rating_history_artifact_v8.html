@@ -692,6 +692,12 @@
       <div class="showmore"><span class="qf" id="pfMore" role="button" tabindex="0">Show all</span></div>
     </div>
     <div class="note" id="pfNote">
+      <strong>Consistency</strong> is how much a player's match performances swing around their rating from one match to the
+      next (±, in rating units; lower = steadier), after removing the part that comes only from the number of points played.
+      It is a score-driven (GAS) variance model: after every match the player's variance moves a little toward the size of
+      that match's surprise, so it is learned over hundreds of matches and changes slowly; the seasons table shows it at
+      the end of each season. In the match odds two steady players make the odds a little more extreme and two erratic
+      ones a little less. On held-out matches the effect on the odds is small, so it gets a small weight.
       Every match of the player, newest first. <strong>Win chance</strong> is the full model's pre-match probability (ratings, closing, head-to-head and the corrections). The <strong>&Delta;</strong> columns are what that match did to the player's ratings: overall level (the average of serve and return), serve, return, and the level on that match's surface (general plus the surface gap). Ratings move on points won on serve and on return compared with what the model expected against that opponent, so a win can lower a rating (winning while being outplayed on points) and a loss can raise it. Before 1991, and wherever serve stats are missing, ratings learn from games won instead. In a retirement with match stats, only the player who did not retire learns from the points played (the injured player's points mostly show the injury); walkovers and defaults don't change the ratings. Win chance is shown for completed matches only. Ratings are in the model's units: 0 is an average tour player. Click an opponent to open their profile.
       <strong>Calibration</strong> groups the player's completed matches by the model's pre-match win chance (in steps of
       10%) and plots how often they actually won: on the dashed line the model got this player right; above it the player

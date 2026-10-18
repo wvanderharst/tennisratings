@@ -24,13 +24,16 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
            pred="game", resid="pooled", split=False, k_s=1.0, k_r=1.0, blend_s=0.6, blend_r=0.6, gain_early=1.0, gain_settle=15.0,
            gb=None, ga=None, mu_k=0.0005, h2h=True, hm=1.0, res_hm=False, k_d=1.0, hook=None, surf_k=1.0, surf_early=1.0, surf_settle=10.0,
            gap=False, lam=0.4, gwt=(0.6, 0.3, 0.1), clamp=None, hook_post=None, k_ret=1.0, ret_side='both',
-           init=None, save_at=None, on_save=None):
+           init=None, save_at=None, on_save=None, var_gas=None):
     GA = H.ga_rate if ga is None else ga; GB = H.gb_persist if gb is None else gb
     # state: serve & return (identical when split=False), general + per surface
     sg = defaultdict(float); rg = defaultdict(float)
     ss = {x: defaultdict(float) for x in SURF}; rs = {x: defaultdict(float) for x in SURF}; ns = {x: defaultdict(int) for x in SURF}
     c = defaultdict(float); last = {}; seen = set(); hh = defaultdict(lambda: defaultdict(int)); ftab = {}
     mu = defaultdict(lambda: 0.55); nm = defaultdict(int)
+    # optional: score-driven variance per player (consistency_gas.py); the level update is scaled by
+    # ((V0 + n) / (V_player + n)) ** gamma, n = the match's point noise (GAS: the mean's score divided by the variance)
+    if var_gas: vg_w, vg_a, vg_b, vg_d, vg_g = (var_gas[k] for k in ("w", "a", "b", "d", "gamma")); fv = defaultdict(lambda: vg_w); fvd = {}
     n = len(rows); S4 = np.zeros((n, 5)); out = np.zeros(n); alt = np.zeros(n); dsv = np.zeros(n); drt = np.zeros(n)
     dy, do_, ay, ao = age_drift
     start = 0
@@ -158,6 +161,18 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
         if gain_early != 1.0:
             ma *= 1 + (gain_early - 1) * math.exp(-nm[a] / gain_settle); mb *= 1 + (gain_early - 1) * math.exp(-nm[b] / gain_settle)
         nm[a] += 1; nm[b] += 1
+        if var_gas and pt and not uo:
+            _, _, sw_, sn_, rw_, rn_ = pt
+            slo = (sn_ * pa * (1 - pa) + rn_ * pb * (1 - pb)) / pt_m
+            if slo > 0:
+                e_v = ((sw_ - sn_ * pa) + (rw_ - rn_ * (1 - pb))) / slo; n_v = pt_m / slo; V0 = math.exp(vg_w)
+                for p_, e_p in ((a, e_v), (b, -e_v)):
+                    if p_ in fvd: fv[p_] += vg_d * math.log1p((when - fvd[p_]).days / 30)
+                    fvd[p_] = when; Vp = math.exp(fv[p_]); h_ = Vp + n_v
+                    mult = ((V0 + n_v) / h_) ** vg_g
+                    if p_ == a: ma *= mult
+                    else: mb *= mult
+                    fv[p_] = min(max(vg_w + vg_b * (fv[p_] - vg_w) + vg_a * (e_p * e_p / h_ - 1) * Vp / h_, -6), 2)
         if uo and ret_side == 'winner': mb = 0.0      # retired match: only the player who did not retire learns
         if uo and not r['pts']: ma = mb = 0.0        # walkover / no stats: nothing to learn
         st = GA * gscale * (k_ret if uo else 1.0)
