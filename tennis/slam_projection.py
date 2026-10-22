@@ -125,7 +125,9 @@ def state(s, d):
     return dict(lead=s["lead"], tr1=(s["lead"] - l1) if l1 is not None else 0.0, tr3=((s["lead"] - l3) / 3) if l3 is not None else 0.0, age=s["age"])
 def fx_drift(t): a = t["age"] - 25; return [1, a, max(a, 0) ** 2, max(t["age"] - 30, 0) ** 2, t["lead"], t["tr1"], t["tr3"]]
 def fx_surv(t): a = t["age"] - 25; return [1, a, max(a, 0) ** 2, t["lead"]]
-def fx_slam(t): return [1, t["lead"], max(t["lead"], 0) ** 2]
+def fx_slam(t): return [1, t["lead"], max(t["lead"], 0) ** 2, t["tr1"], t["tr3"]]
+# trend in the Slam chance: tested on 2009-2025 (trained to 2008): women slightly better (log-lik -276.6 -> -275.4; a
+# 3-year rise means more Slams, a sudden 1-year jump slightly fewer), men unchanged (coefficients ~0)
 def fit_logit_w(X, y, w):
     def nll(c):
         z = X @ c
@@ -149,11 +151,11 @@ def simulate(t, n=3000, years=20, seed=0):
     hist = [np.full(n, l3), np.full(n, (l3 + l1) / 2), np.full(n, l1), lead.copy()]     # leads 3, 2, 1 and 0 years back
     alive = np.ones(n); tot = np.zeros(n); age = t["age"]
     for k in range(years):
-        p = 1 / (1 + np.exp(-(BB[0] + BB[1] * lead + BB[2] * np.maximum(lead, 0) ** 2)))
-        tot += alive * rng.binomial(4, p)                        # the coming year's 4 Slams at the current level
+        tr3 = (lead - hist[-4]) / 3
+        p = 1 / (1 + np.exp(-(BB[0] + BB[1] * lead + BB[2] * np.maximum(lead, 0) ** 2 + BB[3] * tr1 + BB[4] * tr3)))
+        tot += alive * rng.binomial(4, p)                        # the coming year's 4 Slams at the current level and trend
         a = age - 25
         sv = 1 / (1 + np.exp(-(BS[0] + BS[1] * a + BS[2] * max(a, 0) ** 2 + BS[3] * lead)))
-        tr3 = (lead - hist[-4]) / 3
         new = lead + BD[0] + BD[1] * a + BD[2] * max(a, 0) ** 2 + BD[3] * max(age - 30, 0) ** 2 + BD[4] * lead + BD[5] * tr1 + BD[6] * tr3 + rng.normal(0, SD, n)
         tr1 = new - lead; hist.append(new.copy()); lead = new
         alive = alive * (rng.random(n) < sv); age += 1
@@ -161,8 +163,8 @@ def simulate(t, n=3000, years=20, seed=0):
     return float(tot.mean()), float((tot > 0).mean())
 
 def next_year(t):
-    """The coming 12 months: 4 Slams at the chance set by the current lead (no age, no trend)."""
-    p = 1 / (1 + math.exp(-(BB[0] + BB[1] * t["lead"] + BB[2] * max(t["lead"], 0) ** 2)))
+    """The coming 12 months: 4 Slams at the chance set by the current lead and its 1- and 3-year trend (no age)."""
+    p = 1 / (1 + math.exp(-(BB[0] + BB[1] * t["lead"] + BB[2] * max(t["lead"], 0) ** 2 + BB[3] * t["tr1"] + BB[4] * t["tr3"])))
     return 4 * p, 1 - (1 - p) ** 4
 
 # share of the next year's Slams won by the year-end top 150 (the rest: players outside it)
