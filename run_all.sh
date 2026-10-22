@@ -23,6 +23,7 @@ tour() {
   $py build_traj_sr.py $T               # -> work/traj_data_${T}_sr.json   (rating history charts)
   $py build_profiles.py $T              # -> site_v8/prof_${T}_*.json     (player profile pages)
   $py consistency_gas.py $T             # -> site_v8/cons_${T}.json       (consistency: score-driven variance)
+  $py slam_projection.py $T             # -> site_v8/slamproj_${T}.json   (projected further Grand Slam titles)
   $py expect_titles_haz.py $T           # -> work/titles_expected_$T.json, title_chances_$T.json
   $py slam_analysis.py $T               # -> work/slam_eve_$T.json
 }

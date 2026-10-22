@@ -1179,8 +1179,10 @@
       var x = d._by[name.toLowerCase()];
       if (!x) { pfHead.innerHTML = '<div class="pf-empty">' + esc(name) + ' has fewer than 10 rated matches in the data.</div>'; hideCards(); return; }
       return Promise.all([load("prof_" + tour + "_" + x[1] + ".json"), load("cons_" + tour + ".json").catch(function () { return null; }),
-                          load("srpeak_" + tour + ".json").catch(function () { return null; })]).then(function (pp) {
+                          load("srpeak_" + tour + ".json").catch(function () { return null; }),
+                          load("slamproj_" + tour + ".json").catch(function () { return null; })]).then(function (pp) {
         var part = pp[0];
+        pf.sproj = pp[3] ? pp[3].players[x[0]] || null : null;
         pf.srpk = pp[2] ? pp[2][x[0]] || null : null;
         pf.cons = pp[1] ? pp[1].players[x[0]] || null : null; pf.cons0 = pp[1] ? pp[1].sd0 : null;
         pf.name = x[0]; pf.recs = part[x[0]] || []; pf.idx = x; pf.slope = d.slope || 3; pf.calFrom = ""; pf.calTo = ""; renderProfileBody();
@@ -1243,6 +1245,11 @@
       if (X && X.length >= 11) {
         tiles += tile("Grand Slams", X[6] + " won", (X[7]).toFixed(1) + " predicted · " + X[5] + " played");
         tiles += tile("All titles", X[9] + " won", (X[10]).toFixed(1) + " predicted · " + X[8] + " events");
+      }
+      if (pf.sproj) {   // [won, expected further Slams, chance of at least one more]
+        var sp = pf.sproj;
+        tiles += tile("Grand Slams projected", (sp[0] + sp[1]).toFixed(1) + " career", sp[0] + " won + " + sp[1].toFixed(1) + " to come \u00b7 " +
+          (sp[2] >= 0.995 ? ">99" : Math.round(sp[2] * 100)) + "% chance of at least one more");
       }
       // upsets: the win the model rated least likely, and the loss it rated most likely to be a win
       var wins = rated.filter(function (r) { return r[6] && r[8] != null; }), losses = rated.filter(function (r) { return !r[6] && r[8] != null; });
