@@ -18,8 +18,11 @@ TOUR = sys.argv[1]
 SITE = f"{P.ROOT}/site_v8"
 BIRTH = f"{P.OUT}/player_birth_ordinal.json" if TOUR == "atp" else f"{P.ROOT}/wta_data/wta_birth_ordinal_v2.json"
 FIRST_YEAR = 1985 if TOUR == "atp" else 1995
+# field strength (women only): how crowded the top is around the player, and that times the player's own lead. On the
+# held-out years it improved the women's projection (deviance 630 -> 608); for the men it made it worse (400 -> 449:
+# in 2009-2014 the Big 3 crowded each other and still all kept winning), so it is left out there.
 SPEC = (["lead", "lead+^2", "age", "age+^2", "agexlead", "trend", "slams", "yrs"] if TOUR == "atp"
-        else ["lead", "age", "age+^2", "agexlead", "trend", "slams"])
+        else ["lead", "age", "age+^2", "agexlead", "trend", "slams", "crowd", "crowdxlead"])
 D = datetime.date.fromisoformat
 
 rows = {}
@@ -52,7 +55,9 @@ def snapshot(d, limit=150):
     out = []
     for k, (v, p) in enumerate(act[:limit]):
         v12, _ = rating_at(p, d - datetime.timedelta(days=365))
-        out.append(dict(p=p, lead=v - ref, rank=k + 1, trend=(v - v12) if v12 is not None else 0.0,
+        others = [w for w, q in act[:20] if q != p]
+        crowd = math.log(sum(math.exp(3.3 * (w - v)) for w in others))   # strength of the top 20 relative to the player
+        out.append(dict(p=p, crowd=crowd, lead=v - ref, rank=k + 1, trend=(v - v12) if v12 is not None else 0.0,
                         age=(d.toordinal() - birth[p]) / 365.25, yrs=(d - FIRST[p]).days / 365.25,
                         won=sum(1 for x in SL[p] if x < d), fut=sum(1 for x in SL[p] if x >= d)))
     return out
@@ -62,7 +67,8 @@ def features(S):
     f = lambda k: np.array([s[k] for s in S], float)
     lead, a = f("lead"), f("age") - 25
     cols = {"lead": lead, "lead+^2": np.maximum(lead, 0) ** 2, "age": a, "age+^2": np.maximum(a, 0) ** 2, "agexlead": a * lead,
-            "trend": f("trend"), "slams": np.log1p(f("won")), "yrs": np.minimum(f("yrs"), 15) / 10}
+            "trend": f("trend"), "slams": np.log1p(f("won")), "yrs": np.minimum(f("yrs"), 15) / 10,
+            "crowd": f("crowd"), "crowdxlead": f("crowd") * np.maximum(lead, 0)}
     return np.column_stack([np.ones(len(S))] + [cols[k] for k in SPEC])
 
 
