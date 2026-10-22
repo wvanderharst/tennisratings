@@ -4,7 +4,8 @@ what the match did to the ratings.   python3 build_profiles.py atp|wta
 Writes site_v8/prof_{tour}_index.json  ([name, bucket, rated matches, last date, current level] per player)
    and site_v8/prof_{tour}_{k}.json    (players in bucket k -> list of matches, newest last)
 Match row: [date, tournament, level, surface, round, opponent, won, score, win_chance, level_before, d_level, d_serve,
-            d_return, d_surface, opp_level, serve_pts_won_pct, return_pts_won_pct, rated, opp_rank, performance, pts_surprise, pts_slope]
+            d_return, d_surface, opp_level, serve_pts_won_pct, return_pts_won_pct, rated, opp_rank, performance, pts_surprise, pts_slope,
+            closing_after]
 Ratings in the model's units (level = (serve + return) / 2; surface = level on that surface = general + gap)."""
 import paths as P
 import json, sys, math, zlib
@@ -30,7 +31,7 @@ def state(p, surf, X):
     s, r_ = X["sg"][p], X["rg"][p]
     lv = (s + r_) / 2
     sl = (s + LAM * X["ss"][surf][p] + r_ + LAM * X["rs"][surf][p]) / 2 if surf in SURF else lv
-    return lv, s, r_, sl
+    return lv, s, r_, sl, X["c"][p]          # level, serve, return, surface level, closing (set-level finishing)
 pre, post = {}, {}
 def hook(i, r, X):
     pre[i] = {p: state(p, r["surf"], X) for p in (r["a"], r["b"])}
@@ -91,7 +92,7 @@ for r in allrows:
     for me, op, won in ((r["a"], r["b"], 1), (r["b"], r["a"], 0)):
         base = [r["when"].isoformat(), r.get("tname") or "", r["lvl"] or "", r["surf"] or "", r["rnd"] or "", op, won, r["score"] or ""]
         if i is None or i not in pre or i not in post:
-            recs[me].append(base + [None] * 9 + [0, orank(r, won), None, None, None]); continue
+            recs[me].append(base + [None] * 9 + [0, orank(r, won), None, None, None, None]); continue
         uo = EXT[i].get("upd_only", False)
         if not uo: nrated[me] += 1
         b0, b1, o0 = pre[i][me], post[i][me], pre[i][op]
@@ -104,7 +105,7 @@ for r in allrows:
         recs[me].append(base + [R3(pw) if pw is not None else None, R3(b0[0]), R3(b1[0] - b0[0]), R3(b1[1] - b0[1]), R3(b1[2] - b0[2]), R3(b1[3] - b0[3]),
                                 R3(o0[0]), R3(spct * 100) if spct is not None else None, R3(rpct * 100) if rpct is not None else None, 2 if uo else 1, orank(r, won),
                                 *((R3(b0[0] + perf[(i, 1 - won)][0]), round(perf[(i, 1 - won)][1], 2), round(perf[(i, 1 - won)][2], 2))
-                                  if (i, 1 - won) in perf else (None, None, None))])
+                                  if (i, 1 - won) in perf else (None, None, None)), R3(b1[4])])     # [22] closing after the match
         myrank[id(recs[me][-1])] = r["rank_a"] if won else r["rank_b"]
 players = [p for p in recs if nrated[p] >= 10]
 bucket = lambda p: zlib.crc32(p.encode()) % NB
@@ -133,7 +134,7 @@ for r in allrows:
     i = WHERE.get(id(r))
     if i is None or i not in post or EXT[i].get("upd_only"): continue
     for p in (r["a"], r["b"]):
-        _, sv, rt, _ = post[i][p]; x = srpk.get(p)
+        _, sv, rt, _, _ = post[i][p]; x = srpk.get(p)
         if x is None: srpk[p] = x = [sv, r["when"], rt, r["when"]]
         if sv > x[0]: x[0], x[1] = sv, r["when"]
         if rt > x[2]: x[2], x[3] = rt, r["when"]

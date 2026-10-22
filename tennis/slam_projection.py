@@ -29,8 +29,12 @@ FIRST_YEAR = 1985 if TOUR == "atp" else 1995
 # field strength (women only): how crowded the top is around the player, and that times the player's own lead. On the
 # held-out years it improved the women's projection (deviance 630 -> 608); for the men it made it worse (400 -> 449:
 # in 2009-2014 the Big 3 crowded each other and still all kept winning), so it is left out there.
-SPEC = (["lead", "lead+^2", "age", "age+^2", "agexlead", "trend", "slams", "yrs"] if TOUR == "atp"
+SPEC = (["lead", "lead+^2", "age", "age+^2", "agexlead", "trend", "slams", "yrs", "clo"] if TOUR == "atp"
         else ["lead", "age", "age+^2", "agexlead", "trend", "slams", "crowd", "crowdxlead"])
+# "clo" (men): the player's closing (set-level finishing) relative to the No. 5-15. With the rating lead this is what the
+# Strength column measures, with weights from the Slam data. Held-out: men better (regression 399.7 -> 385.3,
+# next-12-months log-lik -191.8 -> -190.2), women no gain (608.3 -> 608.1, -275.7 -> -276.0), so men only.
+CLO = TOUR == "atp"
 D = datetime.date.fromisoformat
 
 rows = {}
@@ -38,7 +42,7 @@ for f in sorted(glob.glob(f"{SITE}/prof_{TOUR}_[0-9]*.json")): rows.update(json.
 birth = json.load(open(BIRTH))
 H, SL, FIRST = {}, {}, {}
 for p, L in rows.items():
-    H[p] = [(D(r[0]), r[9] + r[10]) for r in L if r[9] is not None and r[10] is not None]
+    H[p] = [(D(r[0]), r[9] + r[10], r[22] if len(r) > 22 and r[22] is not None else 0.0) for r in L if r[9] is not None and r[10] is not None]
     SL[p] = [D(r[0]) for r in L if r[2] == "G" and r[4] == "F" and r[6]]
     FIRST[p] = D(L[0][0])
 
@@ -52,6 +56,15 @@ def rating_at(p, d):
     return (h[lo - 1][1], h[lo - 1][0]) if lo else (None, None)
 
 
+def closing_at(p, d):
+    h = H[p]; lo, hi = 0, len(h)
+    while lo < hi:
+        m = (lo + hi) // 2
+        if h[m][0] < d: lo = m + 1
+        else: hi = m
+    return h[lo - 1][2] if lo else 0.0
+
+
 def snapshot(d, limit=150):
     act = []
     for p in H:
@@ -59,13 +72,13 @@ def snapshot(d, limit=150):
         if v is not None and (d - last).days <= 365 and p in birth: act.append((v, p))
     act.sort(reverse=True)
     if len(act) < 30: return []
-    ref = float(np.mean([v for v, _ in act[4:15]]))
+    ref = float(np.mean([v for v, _ in act[4:15]])); cref = float(np.mean([closing_at(p, d) for _, p in act[4:15]]))
     out = []
     for k, (v, p) in enumerate(act[:limit]):
         v12, _ = rating_at(p, d - datetime.timedelta(days=365))
         others = [w for w, q in act[:20] if q != p]
         crowd = math.log(sum(math.exp(3.3 * (w - v)) for w in others))   # strength of the top 20 relative to the player
-        out.append(dict(p=p, crowd=crowd, lead=v - ref, rank=k + 1, trend=(v - v12) if v12 is not None else 0.0,
+        out.append(dict(p=p, crowd=crowd, clo=closing_at(p, d) - cref, lead=v - ref, rank=k + 1, trend=(v - v12) if v12 is not None else 0.0,
                         age=(d.toordinal() - birth[p]) / 365.25, yrs=(d - FIRST[p]).days / 365.25,
                         won=sum(1 for x in SL[p] if x < d), fut=sum(1 for x in SL[p] if x >= d)))
     return out
@@ -76,7 +89,7 @@ def features(S):
     lead, a = f("lead"), f("age") - 25
     cols = {"lead": lead, "lead+^2": np.maximum(lead, 0) ** 2, "age": a, "age+^2": np.maximum(a, 0) ** 2, "agexlead": a * lead,
             "trend": f("trend"), "slams": np.log1p(f("won")), "yrs": np.minimum(f("yrs"), 15) / 10,
-            "crowd": f("crowd"), "crowdxlead": f("crowd") * np.maximum(lead, 0)}
+            "crowd": f("crowd"), "crowdxlead": f("crowd") * np.maximum(lead, 0), "clo": f("clo")}
     return np.column_stack([np.ones(len(S))] + [cols[k] for k in SPEC])
 
 
@@ -122,10 +135,10 @@ def lead_at(p, d):
     return None if v is None or r is None or (d - last_).days > 365 else v - r
 def state(s, d):
     l1 = lead_at(s["p"], d - datetime.timedelta(days=365)); l3 = lead_at(s["p"], d - datetime.timedelta(days=3 * 365))
-    return dict(lead=s["lead"], tr1=(s["lead"] - l1) if l1 is not None else 0.0, tr3=((s["lead"] - l3) / 3) if l3 is not None else 0.0, age=s["age"])
+    return dict(lead=s["lead"], clo=s["clo"], tr1=(s["lead"] - l1) if l1 is not None else 0.0, tr3=((s["lead"] - l3) / 3) if l3 is not None else 0.0, age=s["age"])
 def fx_drift(t): a = t["age"] - 25; return [1, a, max(a, 0) ** 2, max(t["age"] - 30, 0) ** 2, t["lead"], t["tr1"], t["tr3"]]
 def fx_surv(t): a = t["age"] - 25; return [1, a, max(a, 0) ** 2, t["lead"]]
-def fx_slam(t): return [1, t["lead"], max(t["lead"], 0) ** 2, t["tr1"], t["tr3"]]
+def fx_slam(t): return [1, t["lead"], max(t["lead"], 0) ** 2, t["tr1"], t["tr3"]] + ([t["clo"]] if CLO else [])
 # trend in the Slam chance: tested on 2009-2025 (trained to 2008): women slightly better (log-lik -276.6 -> -275.4; a
 # 3-year rise means more Slams, a sudden 1-year jump slightly fewer), men unchanged (coefficients ~0)
 def fit_logit_w(X, y, w):
@@ -152,7 +165,7 @@ def simulate(t, n=3000, years=20, seed=0):
     alive = np.ones(n); tot = np.zeros(n); age = t["age"]
     for k in range(years):
         tr3 = (lead - hist[-4]) / 3
-        p = 1 / (1 + np.exp(-(BB[0] + BB[1] * lead + BB[2] * np.maximum(lead, 0) ** 2 + BB[3] * tr1 + BB[4] * tr3)))
+        p = 1 / (1 + np.exp(-(BB[0] + BB[1] * lead + BB[2] * np.maximum(lead, 0) ** 2 + BB[3] * tr1 + BB[4] * tr3 + (BB[5] * t["clo"] if CLO else 0))))
         tot += alive * rng.binomial(4, p)                        # the coming year's 4 Slams at the current level and trend
         a = age - 25
         sv = 1 / (1 + np.exp(-(BS[0] + BS[1] * a + BS[2] * max(a, 0) ** 2 + BS[3] * lead)))
@@ -164,7 +177,7 @@ def simulate(t, n=3000, years=20, seed=0):
 
 def next_year(t):
     """The coming 12 months: 4 Slams at the chance set by the current lead and its 1- and 3-year trend (no age)."""
-    p = 1 / (1 + math.exp(-(BB[0] + BB[1] * t["lead"] + BB[2] * max(t["lead"], 0) ** 2 + BB[3] * t["tr1"] + BB[4] * t["tr3"])))
+    p = 1 / (1 + math.exp(-(BB[0] + BB[1] * t["lead"] + BB[2] * max(t["lead"], 0) ** 2 + BB[3] * t["tr1"] + BB[4] * t["tr3"] + (BB[5] * t["clo"] if CLO else 0))))
     return 4 * p, 1 - (1 - p) ** 4
 
 # share of the next year's Slams won by the year-end top 150 (the rest: players outside it)
