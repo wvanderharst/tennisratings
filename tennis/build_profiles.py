@@ -5,7 +5,7 @@ Writes site_v8/prof_{tour}_index.json  ([name, bucket, rated matches, last date,
    and site_v8/prof_{tour}_{k}.json    (players in bucket k -> list of matches, newest last)
 Match row: [date, tournament, level, surface, round, opponent, won, score, win_chance, level_before, d_level, d_serve,
             d_return, d_surface, opp_level, serve_pts_won_pct, return_pts_won_pct, rated, opp_rank, performance, pts_surprise, pts_slope,
-            closing_after]
+            closing_after, clutch_after]
 Ratings in the model's units (level = (serve + return) / 2; surface = level on that surface = general + gap)."""
 import paths as P
 import json, sys, math, zlib
@@ -42,13 +42,14 @@ z, st = CE.replay_ckpt(f"profiles_{TOUR}", allrows, EXT, H.age_at, CFE["init_ran
 
 # full-model pre-match probability (same corrections refit as the odds export)
 C = np.load(f"{SCR}/tennis/cache_{TOUR}.npz"); corr = C["corr"].copy(); tr = C["tr"]
-dsum = defaultdict(float); dn = defaultdict(int); fd = np.zeros(len(rows))
+dsum = defaultdict(float); dn = defaultdict(int); fd = np.zeros(len(rows)); clutch_after = {}
 for i, r in enumerate(rows):
     a, b, bo = r["a"], r["b"], r["bo"]
     fd[i] = dsum[a] / (dn[a] + 50) - dsum[b] / (dn[b] + 50)
     q = H.inv_match(round(min(max(1 / (1 + math.exp(-z[i])), 0.001), 0.999), 4), bo)
     if len(r["score"].split()) == 2 * (2 if bo == 3 else 3) - 1:
         dsum[a] += 1 - q; dsum[b] -= 1 - q; dn[a] += 1; dn[b] += 1
+    clutch_after[id(r)] = (dsum[a] / (dn[a] + 50), dsum[b] / (dn[b] + 50))   # deciding-set clutch after the match (as in the odds)
 corr[:, 11] = fd
 F = np.column_stack([z, corr])
 def g(w):
@@ -58,7 +59,7 @@ w0 = np.zeros(F.shape[1]); w0[0] = 1
 zf = F @ minimize(g, w0, jac=True, method="L-BFGS-B").x
 pa_all = np.full(len(EXT), np.nan); pa_all[RIDX] = 1 / (1 + np.exp(-zf))
 
-R3 = lambda x: round(float(x), 3)
+R3 = lambda x: round(float(x), 3); R4 = lambda x: round(float(x), 4)
 # ---- match performance rating: the level at which the model would have expected exactly the points the player won
 # (on serve + on return, against this opponent on this surface), i.e. the rating a zero update would have come from.
 # Shift d on both serve and return of the player: expected points won = sn*sig(m + (s+d - r_opp)/PT_M) + rn*(1 - sig(m + (s_opp - r-d)/PT_M)).
@@ -86,13 +87,14 @@ orank = lambda r, won: r["rank_b"] if won else r["rank_a"]     # opponent's offi
 # how much the win chance moves per unit of level gap (logit scale), for the profile's performance rating
 _x = np.array([pre[i][EXT[i]["a"]][0] - pre[i][EXT[i]["b"]][0] for i in RIDX]); _y = np.log(pa_all[RIDX] / (1 - pa_all[RIDX]))
 SLOPE = float(np.cov(_x, _y)[0, 1] / np.var(_x, ddof=1))
-recs = defaultdict(list); nrated = defaultdict(int); myrank = {}   # own official ranking per match row (best list only)
+recs = defaultdict(list); nrated = defaultdict(int); myrank = {}; cl_now = defaultdict(float)   # own official ranking per match row (best list only)
 for r in allrows:
     i = WHERE.get(id(r))
+    if id(r) in clutch_after: cl_now[r["a"]], cl_now[r["b"]] = clutch_after[id(r)]
     for me, op, won in ((r["a"], r["b"], 1), (r["b"], r["a"], 0)):
         base = [r["when"].isoformat(), r.get("tname") or "", r["lvl"] or "", r["surf"] or "", r["rnd"] or "", op, won, r["score"] or ""]
         if i is None or i not in pre or i not in post:
-            recs[me].append(base + [None] * 9 + [0, orank(r, won), None, None, None, None]); continue
+            recs[me].append(base + [None] * 9 + [0, orank(r, won), None, None, None, None, R4(cl_now[me])]); continue
         uo = EXT[i].get("upd_only", False)
         if not uo: nrated[me] += 1
         b0, b1, o0 = pre[i][me], post[i][me], pre[i][op]
@@ -105,7 +107,7 @@ for r in allrows:
         recs[me].append(base + [R3(pw) if pw is not None else None, R3(b0[0]), R3(b1[0] - b0[0]), R3(b1[1] - b0[1]), R3(b1[2] - b0[2]), R3(b1[3] - b0[3]),
                                 R3(o0[0]), R3(spct * 100) if spct is not None else None, R3(rpct * 100) if rpct is not None else None, 2 if uo else 1, orank(r, won),
                                 *((R3(b0[0] + perf[(i, 1 - won)][0]), round(perf[(i, 1 - won)][1], 2), round(perf[(i, 1 - won)][2], 2))
-                                  if (i, 1 - won) in perf else (None, None, None)), R3(b1[4])])     # [22] closing after the match
+                                  if (i, 1 - won) in perf else (None, None, None)), R3(b1[4]), R4(cl_now[me])])     # [22] closing, [23] clutch after
         myrank[id(recs[me][-1])] = r["rank_a"] if won else r["rank_b"]
 players = [p for p in recs if nrated[p] >= 10]
 bucket = lambda p: zlib.crc32(p.encode()) % NB
