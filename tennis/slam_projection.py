@@ -188,7 +188,7 @@ def project(S, d, n):
     return res
 
 # players: [Slams won, expected further (total), P(1+ more), expected next 12 months, P(1+ next 12 months), expected after that]
-out = {s_["p"]: [s_["won"], round(m, 2), round(q, 3), round(n1, 2), round(q1, 3), round(m - n1, 2)]
+out = {s_["p"]: [s_["won"], round(m, 3), round(q, 4), round(n1, 4), round(q1, 4), round(m - n1, 3)]     # 4 decimals: the many tiny chances add up
        for s_, (m, q, n1, q1) in zip(now, project(now, NOW_D, 3000))}
 for s_ in snapshot(NOW_D, limit=100000):                         # outside the top 150: Slams won only
     out.setdefault(s_["p"], [s_["won"], None, None, None, None, None])
