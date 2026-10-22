@@ -41,7 +41,7 @@ def rating_at(p, d):
     return (h[lo - 1][1], h[lo - 1][0]) if lo else (None, None)
 
 
-def snapshot(d):
+def snapshot(d, limit=150):
     act = []
     for p in H:
         v, last = rating_at(p, d)
@@ -50,7 +50,7 @@ def snapshot(d):
     if len(act) < 30: return []
     ref = float(np.mean([v for v, _ in act[4:15]]))
     out = []
-    for k, (v, p) in enumerate(act[:150]):
+    for k, (v, p) in enumerate(act[:limit]):
         v12, _ = rating_at(p, d - datetime.timedelta(days=365))
         out.append(dict(p=p, lead=v - ref, rank=k + 1, trend=(v - v12) if v12 is not None else 0.0,
                         age=(d.toordinal() - birth[p]) / 365.25, yrs=(d - FIRST[p]).days / 365.25,
@@ -92,7 +92,9 @@ mu = np.exp(np.clip(Xn @ b, -20, 5)); p1 = 1 / (1 + np.exp(-(Xn @ bl)))
 # numbers consistent where the models extrapolate (e.g. players far older than nearly everyone in the training data)
 p1 = np.minimum(p1, 1 - np.exp(-mu))
 out = {s["p"]: [s["won"], round(float(m), 2), round(float(q), 3)] for s, m, q in zip(now, mu, p1)}
+for s in snapshot(last + datetime.timedelta(days=1), limit=100000):      # outside the top 150: Slams won only
+    out.setdefault(s["p"], [s["won"], None, None])
 json.dump(dict(asof=last.isoformat(), trained_to=last.year - 12, players=out), open(f"{SITE}/slamproj_{TOUR}.json", "w"), separators=(",", ":"))
-top = sorted(out.items(), key=lambda kv: -kv[1][1])[:8]
-print(f"{TOUR}: Slam projection from {len(train)} snapshots ({FIRST_YEAR}-{last.year - 12}) for {len(out)} active players;",
+top = sorted(((p, v) for p, v in out.items() if v[1] is not None), key=lambda kv: -kv[1][1])[:8]
+print(f"{TOUR}: Slam projection from {len(train)} snapshots ({FIRST_YEAR}-{last.year - 12}) for {len(now)} active players;",
       "; ".join(f"{p} {v[0]} won +{v[1]:.1f}" for p, v in top))
