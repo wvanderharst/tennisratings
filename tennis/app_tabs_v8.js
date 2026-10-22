@@ -1178,8 +1178,10 @@
     pfIndex(tour).then(function (d) {
       var x = d._by[name.toLowerCase()];
       if (!x) { pfHead.innerHTML = '<div class="pf-empty">' + esc(name) + ' has fewer than 10 rated matches in the data.</div>'; hideCards(); return; }
-      return Promise.all([load("prof_" + tour + "_" + x[1] + ".json"), load("cons_" + tour + ".json").catch(function () { return null; })]).then(function (pp) {
+      return Promise.all([load("prof_" + tour + "_" + x[1] + ".json"), load("cons_" + tour + ".json").catch(function () { return null; }),
+                          load("srpeak_" + tour + ".json").catch(function () { return null; })]).then(function (pp) {
         var part = pp[0];
+        pf.srpk = pp[2] ? pp[2][x[0]] || null : null;
         pf.cons = pp[1] ? pp[1].players[x[0]] || null : null; pf.cons0 = pp[1] ? pp[1].sd0 : null;
         pf.name = x[0]; pf.recs = part[x[0]] || []; pf.idx = x; pf.slope = d.slope || 3; pf.calFrom = ""; pf.calTo = ""; renderProfileBody();
       });
@@ -1217,12 +1219,23 @@
     var html = '<div class="pf-name">' + esc(pf.name) + '</div><div class="pf-sub">' + R.length + " matches in the data (" + full.length + " rated) · " + first.slice(0, 4) + "–" + lastD.slice(0, 4) + " · " + w + " wins, " + l + " losses</div>";
     loadOdds(pf.tour).then(function (D) {
       var P = findP(D, pf.name), tiles = "";
+      // position among the active players (the odds list) on a rating
+      var rankOf = function (key) { var v = P[key]; return 1 + D.players.filter(function (q) { return q[key] > v; }).length; };
+      var nAct = D.players.length, K = pf.srpk;
       if (P) {
         var se = [0, 1, 2].map(function (i) { return blendOf(D, P, i); });
-        tiles += tile("Rating now", P.g.toFixed(2), "serve " + P.sv.toFixed(2) + " · return " + P.rt.toFixed(2));
+        tiles += tile("Rating now", P.g.toFixed(2), "No. " + rankOf("g") + " of " + nAct + " active players");
+        tiles += tile("Serve", P.sv.toFixed(2), "No. " + rankOf("sv") + " of " + nAct + (K ? " \u00b7 peak " + K[0].toFixed(2) + " (" + fmtDate(K[1]) + ")" : ""));
+        tiles += tile("Return", P.rt.toFixed(2), "No. " + rankOf("rt") + " of " + nAct + (K ? " \u00b7 peak " + K[2].toFixed(2) + " (" + fmtDate(K[3]) + ")" : ""));
         tiles += tile("Hard / Clay / Grass", se.map(function (v) { return v.toFixed(2); }).join(" / "), "general + surface gap");
         tiles += tile("Closing · Clutch", sgn(P.c, 2) + " · " + sgn(P.cl, 3), "set finishing · deciding sets");
-      } else if (now != null) tiles += tile("Rating after last match", now.toFixed(2), "not active in the past year");
+      } else if (now != null) {
+        tiles += tile("Rating after last match", now.toFixed(2), "not active in the past year");
+        if (K) {
+          tiles += tile("Serve peak", K[0].toFixed(2), fmtDate(K[1]));
+          tiles += tile("Return peak", K[2].toFixed(2), fmtDate(K[3]));
+        }
+      }
       if (peak) tiles += tile("Career peak", peak.v.toFixed(2), fmtDate(peak.d));
       if (pf.cons) tiles += tile("Consistency", "\u00b1" + pf.cons[0].toFixed(2), (pf.cons[2] != null ? "steadier than " + Math.round(pf.cons[2] * 100) + "% of active players" :
         "match-to-match swing") + " \u00b7 typical \u00b1" + pf.cons0.toFixed(2));

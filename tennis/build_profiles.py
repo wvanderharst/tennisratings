@@ -127,6 +127,19 @@ json.dump(dict(all=[row(p, r) for p, r in cand if min(r[9], r[14]) >= 0.4][:100]
           open(f"{SCR}/site_v8/best_{TOUR}.json", "w"), separators=(",", ":"))
 # rows: player, date, event, level, surface, round, opponent, won, score, perf, rating in, opp rating, serve%, return%, rank, opp rank
 json.dump(dict(tour=TOUR, lam=LAM, slope=round(SLOPE, 4), players=index), open(f"{D}/prof_{TOUR}_index.json", "w"), separators=(",", ":"))
+# career peaks of the serve and the return rating (after each rated match), for the profile page
+srpk = {}
+for r in allrows:
+    i = WHERE.get(id(r))
+    if i is None or i not in post or EXT[i].get("upd_only"): continue
+    for p in (r["a"], r["b"]):
+        _, sv, rt, _ = post[i][p]; x = srpk.get(p)
+        if x is None: srpk[p] = x = [sv, r["when"], rt, r["when"]]
+        if sv > x[0]: x[0], x[1] = sv, r["when"]
+        if rt > x[2]: x[2], x[3] = rt, r["when"]
+pset = set(players)
+json.dump({p: [R3(x[0]), x[1].isoformat(), R3(x[2]), x[3].isoformat()] for p, x in srpk.items() if p in pset},
+          open(f"{D}/srpeak_{TOUR}.json", "w"), separators=(",", ":"))
 tot = 0
 for k in range(NB):
     part = {p: recs[p] for p in players if bucket(p) == k}
