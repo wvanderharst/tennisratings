@@ -1,14 +1,21 @@
 """Projected future Grand Slam titles for the active players.   python3 slam_projection.py atp|wta  (after build_profiles.py)
 
-Snapshots at every year end: each active top-150 player's rating relative to the field (rating minus the average of
-No. 5-15), rating trend over the past 12 months, Slams won so far, age and years on tour -> Slams won AFTER the
-snapshot (Poisson regression). Trained on snapshots up to 12 years ago (the outcome is then known for nearly every
-career); checked on held-out years: trained on 1985-2008 and tested on 2009-2014, the model is far better than a flat
-rate (deviance men 400 vs 1827) but too low overall, because careers got longer (Big 3, Serena), which is why the
-final fit includes the most recent complete snapshots. Model per tour: the form that tested best (men: with a
-squared term for a large lead; women: without years on tour).
-Output site_v8/slamproj_{tour}.json: player -> [Slams won, expected further Slams, chance of at least one more
-(logistic regression on the same inputs)]."""
+Two models, both learned from year-end snapshots of every active top-150 player (rating relative to the field = rating
+minus the average of No. 5-15):
+
+ (a) regression: lead, 12-month trend, Slams won so far, age, years on tour (women: also how crowded the top is around
+     the player) -> Slams won after the snapshot (Poisson; logistic for the chance of at least one more). Trained on
+     snapshots up to 12 years ago (the outcome is then known for nearly every career).
+ (b) year-by-year simulation: next year's 4 Slams are won at a chance set by the CURRENT lead only; then the lead moves
+     by a drift that depends on age, the lead itself and the 1-year and 3-year trend (plus the spread seen in the data),
+     and the player stays active with a chance set by age and level. Age therefore weighs on the later years, not on the
+     coming year. Simulated 3000 times per player.
+
+Held-out tests (trained before the test years, outcome = all Slams won since): men 2009-2014 regression 400 / simulation
+487 / average 424, 2013-2016 205 / 235 / 203; women 2009-2014 608 / 460, 2013-2016 238 / 218 (deviance, lower = better).
+Used: men the average of both, women the simulation. Every model is too low for the Big 3 / Serena era, when careers got
+longer than ever before; the final fits include all complete data, which contains that era.
+Output site_v8/slamproj_{tour}.json: player -> [Slams won, expected further Slams, chance of at least one more]."""
 import paths as P
 import json, glob, math, datetime, sys
 import numpy as np
@@ -89,27 +96,89 @@ def fit(X, y, l2=1e-2):
 
 
 last = max(h[-1][0] for h in H.values() if h)
-SNAP = {Y: snapshot(datetime.date(Y, 12, 31)) for Y in range(FIRST_YEAR, last.year)}
+SNAP = {Y: snapshot(datetime.date(Y, 12, 31)) for Y in range(FIRST_YEAR - 3, last.year)}
+NOW_D = last + datetime.timedelta(days=1)
+now = snapshot(NOW_D)
+
+# ---- (a) regression ----
 train = [s for Y in range(FIRST_YEAR, last.year - 11) for s in SNAP[Y]]
 Xtr = features(train); ytr = np.array([s["fut"] for s in train], float)
 b = fit(Xtr, ytr); bl = fit_logit(Xtr, (ytr > 0).astype(float))
-now = snapshot(last + datetime.timedelta(days=1)); Xn = features(now)
-mu = np.exp(np.clip(Xn @ b, -20, 5)); p1 = 1 / (1 + np.exp(-(Xn @ bl)))
-# a count spread more unevenly than a Poisson with the same mean always has P(>=1) <= 1 - exp(-mean): keeps the two
-# numbers consistent where the models extrapolate (e.g. players far older than nearly everyone in the training data)
-p1 = np.minimum(p1, 1 - np.exp(-mu))
-out = {s["p"]: [s["won"], round(float(m), 2), round(float(q), 3)] for s, m, q in zip(now, mu, p1)}
-for s in snapshot(last + datetime.timedelta(days=1), limit=100000):      # outside the top 150: Slams won only
-    out.setdefault(s["p"], [s["won"], None, None])
+def regress(S):
+    X = features(S); m = np.exp(np.clip(X @ b, -20, 5))
+    # a count spread more unevenly than a Poisson with the same mean always has P(>=1) <= 1 - exp(-mean)
+    return m, np.minimum(1 / (1 + np.exp(-(X @ bl))), 1 - np.exp(-m))
+
+# ---- (b) year-by-year simulation ----
+REF = {}
+def field_ref(d):
+    if d not in REF:
+        act = sorted((v for p in H for v, last_ in [rating_at(p, d)] if v is not None and (d - last_).days <= 365), reverse=True)
+        REF[d] = float(np.mean(act[4:15])) if len(act) >= 30 else None
+    return REF[d]
+def lead_at(p, d):
+    v, last_ = rating_at(p, d); r = field_ref(d)
+    return None if v is None or r is None or (d - last_).days > 365 else v - r
+def state(s, d):
+    l1 = lead_at(s["p"], d - datetime.timedelta(days=365)); l3 = lead_at(s["p"], d - datetime.timedelta(days=3 * 365))
+    return dict(lead=s["lead"], tr1=(s["lead"] - l1) if l1 is not None else 0.0, tr3=((s["lead"] - l3) / 3) if l3 is not None else 0.0, age=s["age"])
+def fx_drift(t): a = t["age"] - 25; return [1, a, max(a, 0) ** 2, max(t["age"] - 30, 0) ** 2, t["lead"], t["tr1"], t["tr3"]]
+def fx_surv(t): a = t["age"] - 25; return [1, a, max(a, 0) ** 2, t["lead"]]
+def fx_slam(t): return [1, t["lead"], max(t["lead"], 0) ** 2]
+def fit_logit_w(X, y, w):
+    def nll(c):
+        z = X @ c
+        return (w * (np.logaddexp(0, z) - y * z)).sum() + 1e-3 * c[1:] @ c[1:], X.T @ (w * (1 / (1 + np.exp(-z)) - y)) + np.r_[0, 2e-3 * c[1:]]
+    return minimize(nll, np.zeros(X.shape[1]), jac=True, method="L-BFGS-B").x
+Xd, yd, Xs, ys, Xb, yb = [], [], [], [], [], []
+for Y in range(FIRST_YEAR, last.year - 1):                      # transitions Y -> Y+1, both complete years
+    d1 = datetime.date(Y + 1, 12, 31)
+    for s_ in SNAP[Y]:
+        t = state(s_, datetime.date(Y, 12, 31))
+        Xb.append(fx_slam(t)); yb.append(sum(1 for x in SL[s_["p"]] if x.year == Y + 1) / 4)
+        l1 = lead_at(s_["p"], d1)
+        Xs.append(fx_surv(t)); ys.append(1.0 if l1 is not None else 0.0)
+        if l1 is not None: Xd.append(fx_drift(t)); yd.append(l1 - t["lead"])
+Xd, yd = np.array(Xd), np.array(yd); BD = np.linalg.lstsq(Xd, yd, rcond=None)[0]; SD = float(np.std(yd - Xd @ BD))
+BS = fit_logit_w(np.array(Xs), np.array(ys), np.ones(len(ys))); BB = fit_logit_w(np.array(Xb), np.array(yb), np.full(len(yb), 4.0))
+def simulate(t, n=3000, years=20, seed=0):
+    rng = np.random.default_rng(seed)
+    lead = np.full(n, t["lead"]); tr1 = np.full(n, t["tr1"])
+    l3, l1 = t["lead"] - 3 * t["tr3"], t["lead"] - t["tr1"]
+    hist = [np.full(n, l3), np.full(n, (l3 + l1) / 2), np.full(n, l1), lead.copy()]     # leads 3, 2, 1 and 0 years back
+    alive = np.ones(n); tot = np.zeros(n); age = t["age"]
+    for k in range(years):
+        p = 1 / (1 + np.exp(-(BB[0] + BB[1] * lead + BB[2] * np.maximum(lead, 0) ** 2)))
+        tot += alive * rng.binomial(4, p)                        # the coming year's 4 Slams at the current level
+        a = age - 25
+        sv = 1 / (1 + np.exp(-(BS[0] + BS[1] * a + BS[2] * max(a, 0) ** 2 + BS[3] * lead)))
+        tr3 = (lead - hist[-4]) / 3
+        new = lead + BD[0] + BD[1] * a + BD[2] * max(a, 0) ** 2 + BD[3] * max(age - 30, 0) ** 2 + BD[4] * lead + BD[5] * tr1 + BD[6] * tr3 + rng.normal(0, SD, n)
+        tr1 = new - lead; hist.append(new.copy()); lead = new
+        alive = alive * (rng.random(n) < sv); age += 1
+        if not alive.any(): break
+    return float(tot.mean()), float((tot > 0).mean())
+
+def project(S, d, n):
+    m_r, q_r = regress(S) if S else (np.zeros(0), np.zeros(0))
+    res = []
+    for i, s_ in enumerate(S):
+        m_s, q_s = simulate(state(s_, d), n=n, seed=i)
+        res.append(((m_r[i] + m_s) / 2, (q_r[i] + q_s) / 2) if TOUR == "atp" else (m_s, q_s))
+    return res
+
+out = {s_["p"]: [s_["won"], round(m, 2), round(q, 3)] for s_, (m, q) in zip(now, project(now, NOW_D, 3000))}
+for s_ in snapshot(NOW_D, limit=100000):                         # outside the top 150: Slams won only
+    out.setdefault(s_["p"], [s_["won"], None, None])
 # the projection at every year end (top 150 at the time), for the player page: [year, won, expected further, P(1+ more)]
-# (years up to trained_to are inside the training data: there the line shows what the model makes of that position)
+# (years inside the fitted data show what the model makes of that position, not a forecast made at the time)
 hist = {}
 for Y, S in SNAP.items():
-    if not S: continue
-    Xs = features(S); m_ = np.exp(np.clip(Xs @ b, -20, 5)); q_ = np.minimum(1 / (1 + np.exp(-(Xs @ bl))), 1 - np.exp(-m_))
-    for s_, m1, q1 in zip(S, m_, q_): hist.setdefault(s_["p"], []).append([Y, s_["won"], round(float(m1), 2), round(float(q1), 3)])
-for s_, m1, q1 in zip(now, mu, p1): hist.setdefault(s_["p"], []).append([last.year + 0.8, s_["won"], round(float(m1), 2), round(float(q1), 3)])
-json.dump(dict(asof=last.isoformat(), trained_to=last.year - 12, players=out, hist=hist), open(f"{SITE}/slamproj_{TOUR}.json", "w"), separators=(",", ":"))
+    if Y < FIRST_YEAR or not S: continue
+    for s_, (m, q) in zip(S, project(S, datetime.date(Y, 12, 31), 400)):
+        hist.setdefault(s_["p"], []).append([Y, s_["won"], round(m, 2), round(q, 3)])
+for s_ in now: hist.setdefault(s_["p"], []).append([last.year + 0.8, s_["won"], out[s_["p"]][1], out[s_["p"]][2]])
+json.dump(dict(asof=last.isoformat(), trained_to=last.year - 2, players=out, hist=hist), open(f"{SITE}/slamproj_{TOUR}.json", "w"), separators=(",", ":"))
 top = sorted(((p, v) for p, v in out.items() if v[1] is not None), key=lambda kv: -kv[1][1])[:8]
-print(f"{TOUR}: Slam projection from {len(train)} snapshots ({FIRST_YEAR}-{last.year - 12}) for {len(now)} active players;",
+print(f"{TOUR}: Slam projection ({'average of regression and simulation' if TOUR == 'atp' else 'simulation'}) for {len(now)} active players;",
       "; ".join(f"{p} {v[0]} won +{v[1]:.1f}" for p, v in top))
