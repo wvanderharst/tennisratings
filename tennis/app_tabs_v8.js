@@ -1192,6 +1192,7 @@
                           load("slamproj_" + tour + ".json").catch(function () { return null; })]).then(function (pp) {
         var part = pp[0];
         pf.sproj = pp[3] ? pp[3].players[x[0]] || null : null;
+        pf.sprojH = pp[3] && pp[3].hist ? pp[3].hist[x[0]] || null : null; pf.sprojTT = pp[3] ? pp[3].trained_to : null;
         pf.srpk = pp[2] ? pp[2][x[0]] || null : null;
         pf.cons = pp[1] ? pp[1].players[x[0]] || null : null; pf.cons0 = pp[1] ? pp[1].sd0 : null;
         pf.name = x[0]; pf.recs = part[x[0]] || []; pf.idx = x; pf.slope = d.slope || 3; pf.calFrom = ""; pf.calTo = ""; renderProfileBody();
@@ -1219,6 +1220,48 @@
     return s.split(" ").map(function (t) { var m = /^(\d+)-(\d+)(\(\d+\))?$/.exec(t); return m ? m[2] + "-" + m[1] + (m[3] || "") : t; }).join(" ");
   }
   function sgn(x, d) { var a = Math.abs(x).toFixed(d); return (+a === 0 ? "" : x > 0 ? "+" : "−") + a; }
+  // projected career Grand Slams over time (slam_projection.py): won so far (step line) and won + expected to come
+  function renderSlamChart() {
+    var box = document.getElementById("pfSlamChart"), H_ = pf.sprojH;
+    if (!H_ || H_.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+    var W = 640, Hh = 190, L = 34, Rm = 96, T = 26, B = 24;
+    var x0 = H_[0][0], x1 = H_[H_.length - 1][0], ymax = Math.max(1, Math.max.apply(null, H_.map(function (h) { return h[1] + h[2]; }))) * 1.08;
+    var X = function (v) { return L + (v - x0) / Math.max(x1 - x0, 1) * (W - L - Rm); }, Y = function (v) { return T + (1 - v / ymax) * (Hh - T - B); };
+    var step = Math.max(1, Math.ceil(ymax / 4)), grid = "";
+    for (var g = 0; g <= ymax; g += step) grid += '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + Y(g) + '" y2="' + Y(g) + '" stroke="var(--grid)" stroke-width="1"/>' +
+      '<text x="' + (L - 6) + '" y="' + (Y(g) + 4) + '" text-anchor="end" font-size="11" fill="var(--ink-soft)">' + g + "</text>";
+    var yrs = ""; var ys = Math.max(1, Math.ceil((x1 - x0) / 8));
+    for (var yv = Math.ceil(x0); yv <= x1; yv += ys) yrs += '<text x="' + X(yv) + '" y="' + (Hh - 6) + '" text-anchor="middle" font-size="11" fill="var(--ink-soft)">' + yv + "</text>";
+    var proj = H_.map(function (h, i) { return (i ? "L" : "M") + X(h[0]).toFixed(1) + " " + Y(h[1] + h[2]).toFixed(1); }).join(" ");
+    var won = H_.map(function (h, i) { return (i ? "L" + X(h[0]).toFixed(1) + " " + Y(H_[i - 1][1]).toFixed(1) + " " : "M") + X(h[0]).toFixed(1) + " " + Y(h[1]).toFixed(1); }).join(" ");
+    var last = H_[H_.length - 1];
+    var svg = '<svg viewBox="0 0 ' + W + " " + Hh + '" width="100%" role="img" aria-label="Projected career Grand Slams over time">' + grid + yrs +
+      '<path d="' + won + '" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/>' +
+      '<path d="' + proj + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>' +
+      '<text x="' + (X(last[0]) + 8) + '" y="' + (Y(last[1] + last[2]) + 4) + '" font-size="12" fill="var(--ink)">Projected ' + (last[1] + last[2]).toFixed(1) + "</text>" +
+      '<text x="' + (X(last[0]) + 8) + '" y="' + (Y(last[1]) + (Math.abs(Y(last[1]) - Y(last[1] + last[2])) < 14 ? 16 : 4)) + '" font-size="12" fill="var(--ink-soft)">Won ' + last[1] + "</text>" +
+      '<line id="pfSlamX" x1="0" x2="0" y1="' + T + '" y2="' + (Hh - B) + '" stroke="var(--ink-soft)" stroke-width="1" opacity="0"/>' +
+      '<rect x="' + L + '" y="' + T + '" width="' + (W - L - Rm) + '" height="' + (Hh - T - B) + '" fill="transparent" id="pfSlamHit"/></svg>';
+    var legend = '<div style="display:flex;gap:16px;font-size:12px;color:var(--ink-soft);margin-bottom:2px">' +
+      '<span><i style="display:inline-block;width:14px;height:2px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>Projected career Grand Slams (won + expected to come)</span>' +
+      '<span><i style="display:inline-block;width:14px;height:2px;background:var(--ink);vertical-align:middle;margin-right:5px"></i>Won so far</span></div>';
+    box.innerHTML = legend + svg + '<div id="pfSlamTip" style="position:absolute;pointer-events:none;display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;color:var(--ink);box-shadow:var(--shadow);white-space:nowrap"></div>' +
+      '<div style="font-size:11.5px;color:var(--ink-soft)">At the end of each season among the top 150 (top-right point: now). Up to ' + pf.sprojTT + " these seasons are part of the model's training data.</div>";
+    box.hidden = false;
+    var hit = document.getElementById("pfSlamHit"), tip = document.getElementById("pfSlamTip"), xl = document.getElementById("pfSlamX"), svgEl = box.querySelector("svg");
+    hit.addEventListener("mousemove", function (ev) {
+      var r = svgEl.getBoundingClientRect(), vx = (ev.clientX - r.left) / r.width * W, best = 0;
+      H_.forEach(function (h, i) { if (Math.abs(X(h[0]) - vx) < Math.abs(X(H_[best][0]) - vx)) best = i; });
+      var h = H_[best], px = X(h[0]);
+      xl.setAttribute("x1", px); xl.setAttribute("x2", px); xl.setAttribute("opacity", "0.6");
+      tip.innerHTML = "<strong>" + (h[0] % 1 ? "Now" : "End of " + h[0]) + "</strong><br>won " + h[1] + " \u00b7 projected career " + (h[1] + h[2]).toFixed(1) +
+        "<br>" + h[2].toFixed(1) + " to come \u00b7 " + (h[3] >= 0.995 ? ">99" : h[3] < 0.005 ? "<1" : Math.round(h[3] * 100)) + "% chance of one more";
+      tip.style.display = "block";
+      var left = px / W * r.width + 12; if (left > r.width - 220) left = px / W * r.width - 230;
+      tip.style.left = left + "px"; tip.style.top = "30px";
+    });
+    hit.addEventListener("mouseleave", function () { tip.style.display = "none"; xl.setAttribute("opacity", "0"); });
+  }
   function renderProfileBody() {
     var R = pf.recs, rated = R.filter(function (r) { return r[17]; }), full = R.filter(function (r) { return r[17] === 1; });
     var w = R.filter(function (r) { return r[6]; }).length, l = R.length - w;
@@ -1278,14 +1321,17 @@
     });
     var cls = function (v) { return Math.abs(v) < 0.0005 ? "num" : v > 0 ? "num up" : "num dn"; };
     var consY = {}; if (pf.cons) pf.cons[3].forEach(function (h) { consY[String(h[0])] = h[1]; });
-    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Performance</button></th><th><button>Δ Rating</button></th><th><button>Age &amp; layoffs</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th><th><button>Consistency</button></th></tr></thead><tbody>" +
+    var projY = {}; if (pf.sprojH) pf.sprojH.forEach(function (h) { projY[String(Math.floor(h[0]))] = h; });
+    renderSlamChart();
+    document.getElementById("pfSeasons").innerHTML = "<thead><tr><th class=\"l\"><button>Season</button></th><th><button>Won–lost</button></th><th><button>Rating at end</button></th><th><button>Performance</button></th><th><button>Δ Rating</button></th><th><button>Age &amp; layoffs</button></th><th><button>Δ Serve</button></th><th><button>Δ Return</button></th><th><button>Consistency</button></th><th><button>Slams proj.</button></th></tr></thead><tbody>" +
       order.slice().reverse().map(function (y, k, rev) {
         // rating change between season ends that did not come from the matches (age drift, decay during layoffs)
         var s = ys[y], prevY = rev[k + 1], prev = prevY ? ys[prevY] : null, dr = prev && prev.end != null && s.end != null && s.n ? s.end - prev.end - s.d : null, pr = perfOf(R.filter(function (r) { return r[0].slice(0, 4) === y; }));
         return '<tr><td class="l">' + y + '</td><td class="num">' + s.w + "–" + s.l + '</td><td class="num">' + (s.end != null ? s.end.toFixed(3) : "–") +
           '</td><td class="' + (pr ? cls(pr.perf - pr.avg) : "num") + '" title="' + (pr ? "average rating going in " + pr.avg.toFixed(3) : "") + '">' + (pr ? (pr.cap > 0 ? "≥" : pr.cap < 0 ? "≤" : "") + pr.perf.toFixed(3) : "–") +
           '</td><td class="' + cls(s.d) + '">' + (s.n ? sgn(s.d, 3) : "–") + '</td><td class="' + (dr == null ? "num" : cls(dr)) + '" style="opacity:.75">' + (dr == null ? "–" : sgn(dr, 3)) + '</td><td class="' + cls(s.ds) + '">' + (s.n ? sgn(s.ds, 3) : "–") + '</td><td class="' + cls(s.dr) + '">' + (s.n ? sgn(s.dr, 3) : "–") +
-          '</td><td class="num" title="match-to-match swing at the end of the season (lower = steadier)">' + (consY[y] != null ? "\u00b1" + consY[y].toFixed(2) : "–") + "</td></tr>";
+          '</td><td class="num" title="match-to-match swing at the end of the season (lower = steadier)">' + (consY[y] != null ? "\u00b1" + consY[y].toFixed(2) : "–") +
+          '</td><td class="num" title="projected career Grand Slams at the end of the season (won + expected still to come)">' + (projY[y] ? (projY[y][1] + projY[y][2]).toFixed(1) : "–") + "</td></tr>";
       }).join("") + "</tbody>";
     document.getElementById("pfSeasonsCard").hidden = false;
     pfYear.innerHTML = '<option value="">All seasons</option>' + order.slice().reverse().map(function (y) { return '<option value="' + y + '">' + y + "</option>"; }).join("");

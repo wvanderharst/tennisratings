@@ -83,7 +83,8 @@ def fit(X, y, l2=1e-2):
 
 
 last = max(h[-1][0] for h in H.values() if h)
-train = [s for Y in range(FIRST_YEAR, last.year - 11) for s in snapshot(datetime.date(Y, 12, 31))]
+SNAP = {Y: snapshot(datetime.date(Y, 12, 31)) for Y in range(FIRST_YEAR, last.year)}
+train = [s for Y in range(FIRST_YEAR, last.year - 11) for s in SNAP[Y]]
 Xtr = features(train); ytr = np.array([s["fut"] for s in train], float)
 b = fit(Xtr, ytr); bl = fit_logit(Xtr, (ytr > 0).astype(float))
 now = snapshot(last + datetime.timedelta(days=1)); Xn = features(now)
@@ -94,7 +95,15 @@ p1 = np.minimum(p1, 1 - np.exp(-mu))
 out = {s["p"]: [s["won"], round(float(m), 2), round(float(q), 3)] for s, m, q in zip(now, mu, p1)}
 for s in snapshot(last + datetime.timedelta(days=1), limit=100000):      # outside the top 150: Slams won only
     out.setdefault(s["p"], [s["won"], None, None])
-json.dump(dict(asof=last.isoformat(), trained_to=last.year - 12, players=out), open(f"{SITE}/slamproj_{TOUR}.json", "w"), separators=(",", ":"))
+# the projection at every year end (top 150 at the time), for the player page: [year, won, expected further, P(1+ more)]
+# (years up to trained_to are inside the training data: there the line shows what the model makes of that position)
+hist = {}
+for Y, S in SNAP.items():
+    if not S: continue
+    Xs = features(S); m_ = np.exp(np.clip(Xs @ b, -20, 5)); q_ = np.minimum(1 / (1 + np.exp(-(Xs @ bl))), 1 - np.exp(-m_))
+    for s_, m1, q1 in zip(S, m_, q_): hist.setdefault(s_["p"], []).append([Y, s_["won"], round(float(m1), 2), round(float(q1), 3)])
+for s_, m1, q1 in zip(now, mu, p1): hist.setdefault(s_["p"], []).append([last.year + 0.8, s_["won"], round(float(m1), 2), round(float(q1), 3)])
+json.dump(dict(asof=last.isoformat(), trained_to=last.year - 12, players=out, hist=hist), open(f"{SITE}/slamproj_{TOUR}.json", "w"), separators=(",", ":"))
 top = sorted(((p, v) for p, v in out.items() if v[1] is not None), key=lambda kv: -kv[1][1])[:8]
 print(f"{TOUR}: Slam projection from {len(train)} snapshots ({FIRST_YEAR}-{last.year - 12}) for {len(now)} active players;",
       "; ".join(f"{p} {v[0]} won +{v[1]:.1f}" for p, v in top))
