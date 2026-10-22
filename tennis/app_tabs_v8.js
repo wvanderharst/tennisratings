@@ -374,7 +374,7 @@
           d.players.forEach(function (p) { var x = cons.players[p.n]; if (x) { p.csd = x[0]; p.cv = x[0] * x[0]; p.cpct = x[2]; } });
         }
         // projected Grand Slams (slam_projection.py): won so far, expected still to come, chance of at least one more
-        if (sproj) d.players.forEach(function (p) { var x = sproj.players[p.n]; if (x) { p.slw = x[0]; p.slf = x[1]; p.sl1 = x[2]; } });
+        if (sproj) d.players.forEach(function (p) { var x = sproj.players[p.n]; if (x) { p.slw = x[0]; p.slf = x[1]; p.sl1 = x[2]; p.sln = x[3]; p.slq = x[4]; p.sll = x[5]; } });
         d.byName = {}; d.players.forEach(function (p, i) { p.i = i; d.byName[p.n.toLowerCase()] = p; });
         d.h2hMap = {};
         // display only: each surface rating put on the general-rating scale by matching its average
@@ -514,6 +514,7 @@
     });
     return (D._str[key] = out);
   }
+  var pctS = function (v) { return (v >= 0.995 ? ">99" : v < 0.005 ? "<1" : Math.round(v * 100)) + "%"; };
   function renderRankings() {
     if (panels.rankings.hidden) return;
     rkTable.innerHTML = '<tr><td class="loading" style="text-align:center">Loading ratings&hellip;</td></tr>';
@@ -531,7 +532,8 @@
       rows.sort(function (a, b) { return b.win - a.win; });
       rows.forEach(function (r, i) { r.pos = i + 1; });
       rows.forEach(function (r) { r.age = r.p.age; r.closing = r.p.c; r.clutch = r.p.cl; r.trank = r.p.rk || 99999; r.matches = r.p.m; r.name = r.p.n; r.serve = r.sve; r.ret = r.rte;
-        r.slams = r.p.slw; r.sfut = r.p.slf; r.scar = r.p.slw != null ? r.p.slw + (r.p.slf || 0) : null; r.sone = r.p.sl1; r.swing = r.p.csd; });
+        r.slams = r.p.slw; r.sfut = r.p.slf; r.scar = r.p.slw != null ? r.p.slw + (r.p.slf || 0) : null; r.sone = r.p.sl1; r.swing = r.p.csd;
+        r.snext = r.p.sln; r.snq = r.p.slq; r.slater = r.p.sll; });
       var sorted = rows.slice();
       if (rk.sort === "strength" && rk.dir > 0) sorted.reverse();
       if (rk.sort !== "strength") sorted.sort(function (a, b) {
@@ -549,7 +551,8 @@
       ];
       var hasSR = true;
       cols.splice(5, 0, ["serve", "Serve"], ["ret", "Return"]);
-      cols.push(["slams", "Slams"], ["sfut", "Slams to come"], ["sone", "Chance of 1+ more"], ["scar", "Slams career proj."], ["swing", "Consistency"]);
+      cols.push(["slams", "Slams"], ["snext", "Slams next 12 mo."], ["snq", "Chance in 12 mo."], ["slater", "Slams after that"], ["sfut", "Slams to come"],
+                ["sone", "Chance of 1+ more"], ["scar", "Slams career proj."], ["swing", "Consistency"]);
       cols.push(["erank", "Elo rank"], ["elo", "Elo"]);
       var head = "<thead><tr>" + cols.map(function (c) {
         var active = (rk.sort === c[0]) || (rk.sort === "strength" && (c[0] === "pos" || c[0] === "win"));
@@ -573,14 +576,17 @@
           '<td class="num">' + (p.cl >= 0 ? "+" : "") + p.cl.toFixed(3) + "</td>" +
           '<td class="num">' + (p.rk || "–") + (p.rk && p.rk !== r.pos ? ' <span style="opacity:.55;font-size:11px">' + (p.rk > r.pos ? "▼" : "▲") + Math.abs(p.rk - r.pos) + "</span>" : "") + "</td>" +
           '<td class="num">' + p.m + "</td>" +
-          '<td class="num">' + (r.slams != null ? r.slams : "–") + '</td><td class="num">' + (r.sfut != null ? r.sfut.toFixed(1) : "–") +
+          '<td class="num">' + (r.slams != null ? r.slams : "–") +
+          '</td><td class="num">' + (r.snext != null ? r.snext.toFixed(2) : "–") + '</td><td class="num">' + (r.snq != null ? pctS(r.snq) : "–") +
+          '</td><td class="num">' + (r.slater != null ? r.slater.toFixed(1) : "–") +
+          '</td><td class="num">' + (r.sfut != null ? r.sfut.toFixed(1) : "–") +
           '</td><td class="num">' + (r.sone != null ? (r.sone >= 0.995 ? ">99" : r.sone < 0.005 ? "<1" : Math.round(r.sone * 100)) + "%" : "–") +
           '</td><td class="num" style="font-weight:600">' + (r.scar != null ? r.scar.toFixed(1) : "–") +
           '</td><td class="num">' + (r.swing != null ? "\u00b1" + r.swing.toFixed(2) : "–") + "</td>" +
           '<td class="num" style="color:var(--ink-soft)">' + r.erank + (r.erank !== r.pos ? ' <span style="opacity:.55;font-size:11px">' + (r.erank > r.pos ? "▼" : "▲") + Math.abs(r.erank - r.pos) + "</span>" : "") + "</td>" +
           '<td class="num" style="color:var(--ink-soft)">' + Math.round(r.elo) + "</td>" + "</tr>";
       }).join("");
-      rkTable.innerHTML = head + "<tbody>" + (body || '<tr><td colspan="21" class="l" style="color:var(--ink-soft)">No active player matches that name.</td></tr>') + "</tbody>";
+      rkTable.innerHTML = head + "<tbody>" + (body || '<tr><td colspan="24" class="l" style="color:var(--ink-soft)">No active player matches that name.</td></tr>') + "</tbody>";
       Array.prototype.forEach.call(rkTable.querySelectorAll("th button"), function (b) {
         b.addEventListener("click", function () {
           var k = b.dataset.sort;
@@ -595,7 +601,7 @@
       rkMore.textContent = rk.all ? "Show top 50" : "Show all " + sorted.length;
       document.getElementById("rkAsOf").textContent = "Ratings as of " + fmtDate(C.asof) + ", the last match in the data · " +
         D.players.length + " active players (30+ matches, played in the past year)";
-      document.getElementById("rkNote").innerHTML = "<strong>Every player has a serve rating and a return rating</strong>: how much better than an average tour player they win points on serve, and on return, adjusted for who they faced. The <em>rating</em> is their average. <strong>Surface ratings</strong> are the general rating plus that player's own gap on the surface, and the gaps balance out (weighted hard 60%, clay 30%, grass 10%), so the general rating is always that weighted average of the three surface ratings — never above a player's best surface or below their worst. <strong>Serve</strong> and <strong>Return</strong> show the two halves on the surface picked above. The model predicts each match from serve-versus-return point chances → service holds → sets (tiebreaks point by point) → match. Faded cells: never played there, so rated the same as general. <strong>Slams to come</strong>, <strong>chance of 1+ more</strong> and <strong>career projection</strong> come from a model of what happened to past players in the same position (rating vs the field, 12-month trend, Slams won, age, years on tour; top 150 only); <strong>Consistency</strong> is the match-to-match swing of a player's performances (lower = steadier; click to sort steadiest first). " +
+      document.getElementById("rkNote").innerHTML = "<strong>Every player has a serve rating and a return rating</strong>: how much better than an average tour player they win points on serve, and on return, adjusted for who they faced. The <em>rating</em> is their average. <strong>Surface ratings</strong> are the general rating plus that player's own gap on the surface, and the gaps balance out (weighted hard 60%, clay 30%, grass 10%), so the general rating is always that weighted average of the three surface ratings — never above a player's best surface or below their worst. <strong>Serve</strong> and <strong>Return</strong> show the two halves on the surface picked above. The model predicts each match from serve-versus-return point chances → service holds → sets (tiebreaks point by point) → match. Faded cells: never played there, so rated the same as general. <strong>Slams next 12 mo.</strong> comes from the current level only (the lead over No. 5\u201315), shared out over the field so the 4 Slams add up; <strong>Slams after that</strong> adds age, the 1- and 3-year trend and the chance to keep playing. <strong>Slams to come</strong>, <strong>chance of 1+ more</strong> and <strong>career projection</strong> come from a model of what happened to past players in the same position (rating vs the field, 12-month trend, Slams won, age, years on tour; top 150 only); <strong>Consistency</strong> is the match-to-match swing of a player's performances (lower = steadier; click to sort steadiest first). " +
         "<strong>Elo</strong> is a classic Elo rating for comparison, on the same matches: wins and losses only (Tennis Abstract style, K = 250/(n+5)^0.4; surface views average overall and surface Elo). <strong>Elo rank</strong> is the rank it gives among these players; the arrows next to <strong>Elo rank</strong> and the official " + (C.tour === "atp" ? "ATP" : "WTA") + " rank show how many places that ranking puts a player below (▼) or above (▲) the model's Strength rank (the official ranking counts every player, including injured ones, so gaps there can be larger). On held-out matches (2017+ men, late 2018+ women) the model beats Elo clearly: logloss 0.610 vs 0.634 and accuracy 66.1% vs 63.4% for men, 0.592 vs 0.616 and 68.0% vs 65.8% for women. " +
         "<strong>Strength</strong> ranks players on what the full model expects them to <em>win</em>: their average chance against the players currently ranked 5th to 15th on the general rating (tour event, best of 3, standard court; a player in that group is not counted against themselves), including closing, clutch and head-to-heads; <em>General</em> weights hard 60%, clay 30%, grass 10%. <strong>Closing</strong> is the set-level finishing rating and <strong>Clutch</strong> the deciding-set rating. " +
         (C.tour === "atp" ? "" : "Women's correction weights (clutch, top-4 at Slams, age, height, court speed) are fitted on WTA matches; fewer women qualify as active (30+ main-tour matches in the past year), because the data has no ITF or qualifying matches. ") + "Click a column to sort, or a name to open that player\u2019s profile.";
@@ -1300,6 +1306,8 @@
       }
       if (pf.sproj) {   // [won, expected further Slams, chance of at least one more]
         var sp = pf.sproj;
+        if (sp[3] != null) tiles += tile("Slams next 12 months", sp[3].toFixed(2), (sp[4] >= 0.995 ? ">99" : sp[4] < 0.005 ? "<1" : Math.round(sp[4] * 100)) + "% chance of at least one \u00b7 from the current level only");
+        if (sp[5] != null) tiles += tile("Slams after that", sp[5].toFixed(1), "from age, trend and the chance to keep playing");
         if (sp[1] != null) tiles += tile("Grand Slams projected", (sp[0] + sp[1]).toFixed(1) + " career", sp[0] + " won + " + sp[1].toFixed(1) + " to come \u00b7 " +
           (sp[2] >= 0.995 ? ">99" : Math.round(sp[2] * 100)) + "% chance of at least one more");
       }

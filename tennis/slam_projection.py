@@ -15,7 +15,8 @@ Held-out tests (trained before the test years, outcome = all Slams won since): m
 487 / average 424, 2013-2016 205 / 235 / 203; women 2009-2014 608 / 460, 2013-2016 238 / 218 (deviance, lower = better).
 Used: men the average of both, women the simulation. Every model is too low for the Big 3 / Serena era, when careers got
 longer than ever before; the final fits include all complete data, which contains that era.
-Output site_v8/slamproj_{tour}.json: player -> [Slams won, expected further Slams, chance of at least one more]."""
+Output site_v8/slamproj_{tour}.json: player -> [Slams won, expected further Slams, chance of at least one more, expected
+in the next 12 months (current lead only), chance of one in the next 12 months, expected after that]."""
 import paths as P
 import json, glob, math, datetime, sys
 import numpy as np
@@ -159,26 +160,45 @@ def simulate(t, n=3000, years=20, seed=0):
         if not alive.any(): break
     return float(tot.mean()), float((tot > 0).mean())
 
+def next_year(t):
+    """The coming 12 months: 4 Slams at the chance set by the current lead (no age, no trend)."""
+    p = 1 / (1 + math.exp(-(BB[0] + BB[1] * t["lead"] + BB[2] * max(t["lead"], 0) ** 2)))
+    return 4 * p, 1 - (1 - p) ** 4
+
+# share of the next year's Slams won by the year-end top 150 (the rest: players outside it)
+_won = sum(1 for Y in range(FIRST_YEAR, last.year - 1) for s_ in SNAP[Y] for x in SL[s_["p"]] if x.year == Y + 1)
+_all = 4 * len(range(FIRST_YEAR, last.year - 1))
+SHARE = _won / _all
+
 def project(S, d, n):
+    """per player: (expected further Slams, P(1+ more), expected in the next 12 months, P(1+ in the next 12 months)).
+    The next 12 months are shared out over the field: the per-Slam chances are scaled so the top 150 together win
+    4 x SHARE Slams (each player computed on their own would not add up to the 4 Slams there are)."""
     m_r, q_r = regress(S) if S else (np.zeros(0), np.zeros(0))
+    ts = [state(s_, d) for s_ in S]; raw = [next_year(t)[0] for t in ts]
+    scale = 4 * SHARE / sum(raw) if raw and sum(raw) > 0 else 1.0
     res = []
     for i, s_ in enumerate(S):
-        m_s, q_s = simulate(state(s_, d), n=n, seed=i)
-        res.append(((m_r[i] + m_s) / 2, (q_r[i] + q_s) / 2) if TOUR == "atp" else (m_s, q_s))
+        t = ts[i]; m_s, q_s = simulate(t, n=n, seed=i)
+        p_ = min(raw[i] * scale / 4, 0.95); n1, q1 = 4 * p_, 1 - (1 - p_) ** 4
+        m, q = ((m_r[i] + m_s) / 2, (q_r[i] + q_s) / 2) if TOUR == "atp" else (m_s, q_s)
+        res.append((max(m, n1), max(q, q1), n1, q1))
     return res
 
-out = {s_["p"]: [s_["won"], round(m, 2), round(q, 3)] for s_, (m, q) in zip(now, project(now, NOW_D, 3000))}
+# players: [Slams won, expected further (total), P(1+ more), expected next 12 months, P(1+ next 12 months), expected after that]
+out = {s_["p"]: [s_["won"], round(m, 2), round(q, 3), round(n1, 2), round(q1, 3), round(m - n1, 2)]
+       for s_, (m, q, n1, q1) in zip(now, project(now, NOW_D, 3000))}
 for s_ in snapshot(NOW_D, limit=100000):                         # outside the top 150: Slams won only
-    out.setdefault(s_["p"], [s_["won"], None, None])
+    out.setdefault(s_["p"], [s_["won"], None, None, None, None, None])
 # the projection at every year end (top 150 at the time), for the player page: [year, won, expected further, P(1+ more)]
 # (years inside the fitted data show what the model makes of that position, not a forecast made at the time)
 hist = {}
 for Y, S in SNAP.items():
     if Y < FIRST_YEAR or not S: continue
-    for s_, (m, q) in zip(S, project(S, datetime.date(Y, 12, 31), 400)):
-        hist.setdefault(s_["p"], []).append([Y, s_["won"], round(m, 2), round(q, 3)])
-for s_ in now: hist.setdefault(s_["p"], []).append([last.year + 0.8, s_["won"], out[s_["p"]][1], out[s_["p"]][2]])
+    for s_, (m, q, n1, q1) in zip(S, project(S, datetime.date(Y, 12, 31), 400)):
+        hist.setdefault(s_["p"], []).append([Y, s_["won"], round(m, 2), round(q, 3), round(n1, 2)])
+for s_ in now: hist.setdefault(s_["p"], []).append([last.year + 0.8, s_["won"], out[s_["p"]][1], out[s_["p"]][2], out[s_["p"]][3]])
 json.dump(dict(asof=last.isoformat(), trained_to=last.year - 2, players=out, hist=hist), open(f"{SITE}/slamproj_{TOUR}.json", "w"), separators=(",", ":"))
 top = sorted(((p, v) for p, v in out.items() if v[1] is not None), key=lambda kv: -kv[1][1])[:8]
 print(f"{TOUR}: Slam projection ({'average of regression and simulation' if TOUR == 'atp' else 'simulation'}) for {len(now)} active players;",
-      "; ".join(f"{p} {v[0]} won +{v[1]:.1f}" for p, v in top))
+      "; ".join(f"{p} {v[0]} won +{v[3]:.2f} next 12 months, +{v[5]:.1f} after" for p, v in top))
