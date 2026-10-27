@@ -138,14 +138,14 @@ This repository includes `.github/workflows/update-site.yml`.
 2. Go to Settings → Pages → Source: **GitHub Actions**.
 3. Every Saturday at 05:17 UTC the workflow downloads the data, commits the updated match files (`atp_uploads/`,
    `wta_data/`, `last_update.txt`) to the repository, rebuilds and publishes the site at `https://<you>.github.io/<repo>/`.
-   Every 6 hours in between, a small job refreshes only the draws of the ongoing tournaments
+   On Mondays and Wednesdays a small job refreshes only the draws of the ongoing tournaments
    (`tools/fetch_draws.py`, from Tennis Abstract) on the last published site, for the **Live draws** tab.
    The weekly commit also keeps the schedule alive (GitHub switches off scheduled workflows after 60 days without
    repository activity). The prebuilt `site_v8/` in the repository is not updated by it; the live site is.
 4. The checkpoints (`state/`) are kept in the Actions cache between runs, so a run only replays the last weeks.
-   GitHub deletes cache entries unused for 7 days, so a small Wednesday job touches the cache. Without a usable cache
-   (first run, code changed) the run is a full rebuild, and the first Saturday of each month is a full rebuild anyway
-   as a safety net.
+   GitHub deletes cache entries unused for 7 days; the Monday/Wednesday draws job also touches the cache. Without a
+   usable cache (first run, code or settings changed, earlier data corrected) the run falls back to a full rebuild by
+   itself; there is no scheduled full rebuild.
 5. Actions → "Update tennis ratings" → **Run workflow** starts it by hand (tick "Full rebuild" to ignore the checkpoints).
 
 **Run it automatically, option B: on your own computer**

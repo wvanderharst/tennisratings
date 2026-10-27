@@ -1,15 +1,15 @@
 # Weekly (Saturday): download the latest TennisMyLife data, commit it to the repository, update the ratings and
-# publish the site to GitHub Pages. Every 6 hours in between: refresh only the draws of the ongoing tournaments
+# publish the site to GitHub Pages. Monday and Wednesday: refresh only the draws of the ongoing tournaments
 # (Tennis Abstract) on the last published site (the 'Live draws' tab computes the chances in the browser).
 # Needs Settings -> Pages -> Source: "GitHub Actions". Runs from the default branch.
 # Incremental: the replay checkpoints (state/) are kept in the Actions cache, so a run only replays the last weeks.
-# GitHub deletes cache entries unused for 7 days; the 6-hourly draws job also touches the checkpoint cache.
-# Without a usable cache (first run, code changed, cache gone) the run is a full rebuild.
+# GitHub deletes cache entries unused for 7 days; the Monday/Wednesday draws job also touches the checkpoint cache.
+# Without a usable cache (first run, code changed, cache gone) the run is a full rebuild; otherwise only on request.
 name: Update tennis ratings
 on:
   schedule:
     - cron: "17 5 * * 6"        # Saturday 05:17 UTC: update + publish
-    - cron: "41 1,7,13,19 * * *"  # every 6 hours: refresh the draws of the ongoing tournaments only
+    - cron: "41 7 * * 1,3"        # Monday and Wednesday 07:41 UTC: refresh the draws of the ongoing tournaments only
   workflow_dispatch:             # "Run workflow" button on the Actions tab
     inputs:
       full:
@@ -22,7 +22,7 @@ on:
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
   draws:
-    if: github.event.schedule == '41 1,7,13,19 * * *'
+    if: github.event.schedule == '41 7 * * 1,3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions: { contents: read, actions: read }
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
   build:
-    if: github.event.schedule != '41 1,7,13,19 * * *'
+    if: github.event.schedule != '41 7 * * 1,3'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions: { contents: write }       # commits the updated data files
@@ -69,8 +69,9 @@ jobs:
           FULL_INPUT: ${{ inputs.full }}
           EVENT: ${{ github.event_name }}
         run: |
-          # full rebuild on request, and on the first Saturday of the month as a safety net
-          if [ "$FULL_INPUT" = true ] || { [ "$EVENT" = schedule ] && [ "$(date -u +%d)" -le 7 ]; }; then export TENNIS_FULL=1; echo "full rebuild"; fi
+          # full rebuild only on request: the checkpoints already fall back to a full replay by themselves whenever the
+          # code, the settings or any earlier match differ
+          if [ "$FULL_INPUT" = true ]; then export TENNIS_FULL=1; echo "full rebuild"; fi
           # machine + library versions: floating-point results can differ in the last digits between CPU types
           lscpu | grep -m1 "Model name"; python3 -c "import sys, numpy, scipy; print('python', sys.version.split()[0], 'numpy', numpy.__version__, 'scipy', scipy.__version__)"
           mkdir -p site_v8 work
