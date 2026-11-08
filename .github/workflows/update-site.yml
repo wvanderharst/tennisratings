@@ -46,6 +46,7 @@ jobs:
         run: |
           test -f _site/tennis_ratings.html || { echo "no published site in the cache yet (it is saved by the weekly build)"; exit 1; }
           python3 tools/fetch_draws.py _site/draws.json
+          echo "${{ github.run_id }}" > _site/version.txt      # checked on the live site after the deploy
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
   build:
@@ -86,6 +87,7 @@ jobs:
           for f in "$GITHUB_WORKSPACE/_site/tennis_ratings.html" "$GITHUB_WORKSPACE/_site/index.html"; do
             sed -i "1s|^<meta charset=\"utf-8\">|<meta charset=\"utf-8\">\n<script>window.SITE_VERSION = \"${{ github.run_id }}\";</script>|" "$f"
           done
+          echo "${{ github.run_id }}" > "$GITHUB_WORKSPACE/_site/version.txt"      # checked on the live site after the deploy
       - name: Save replay checkpoints
         uses: actions/cache/save@v4
         with:
@@ -119,3 +121,14 @@ jobs:
     steps:
       - id: d
         uses: actions/deploy-pages@v4
+      - name: Check that the live site serves this run
+        # deploy-pages can report success while the old site is still being served; fail the run (GitHub then emails)
+        # if the live version.txt does not show this run's id within ~10 minutes
+        env: { URL: "${{ steps.d.outputs.page_url }}", RUN: "${{ github.run_id }}" }
+        run: |
+          for i in $(seq 1 20); do
+            v=$(curl -fsS -H "Cache-Control: no-cache" "${URL%/}/version.txt?check=$RUN-$i" 2>/dev/null | tr -d '[:space:]')
+            if [ "$v" = "$RUN" ]; then echo "live site serves run $RUN"; exit 0; fi
+            echo "live site serves '${v:-nothing}', waiting for $RUN ($i/20)"; sleep 30
+          done
+          echo "::error::the live site still does not serve this run after 10 minutes"; exit 1
