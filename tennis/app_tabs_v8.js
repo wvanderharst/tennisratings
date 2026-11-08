@@ -355,7 +355,10 @@
   // ---------------- data loading ----------------
   var cache = {};
   function load(name) {
-    if (!cache[name]) cache[name] = fetch(name).then(function (r) {
+    // cache-busting: the build stamps window.SITE_VERSION into the page, so a phone that keeps an old copy of a data
+    // file still gets the new one once the page itself is reloaded; the draws change between builds (refresh hourly)
+    var v = name === "draws.json" ? "h" + Math.floor(Date.now() / 3.6e6) : (window.SITE_VERSION || "");
+    if (!cache[name]) cache[name] = fetch(v ? name + "?v=" + v : name).then(function (r) {
       if (!r.ok) throw new Error(name + " (" + r.status + ")");
       return r.json();
     });

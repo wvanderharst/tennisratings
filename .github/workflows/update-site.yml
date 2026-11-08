@@ -81,6 +81,11 @@ jobs:
           cp site_v8/*.json site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/"
           cp site_v8/tennis_ratings.html "$GITHUB_WORKSPACE/_site/index.html"
           cp tennis_model_documentation.pdf "$GITHUB_WORKSPACE/_site/" || true
+          # stamp the build into the page: it fetches its data files with ?v=<run id>, so a browser (phones especially)
+          # cannot combine a new page with old cached data
+          for f in "$GITHUB_WORKSPACE/_site/tennis_ratings.html" "$GITHUB_WORKSPACE/_site/index.html"; do
+            sed -i "1s|^<meta charset=\"utf-8\">|<meta charset=\"utf-8\">\n<script>window.SITE_VERSION = \"${{ github.run_id }}\";</script>|" "$f"
+          done
       - name: Save replay checkpoints
         uses: actions/cache/save@v4
         with:
