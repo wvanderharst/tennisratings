@@ -24,7 +24,7 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
            pred="game", resid="pooled", split=False, k_s=1.0, k_r=1.0, blend_s=0.6, blend_r=0.6, gain_early=1.0, gain_settle=15.0,
            gb=None, ga=None, mu_k=0.0005, h2h=True, hm=1.0, res_hm=False, k_d=1.0, hook=None, surf_k=1.0, surf_early=1.0, surf_settle=10.0,
            gap=False, lam=0.4, gwt=(0.6, 0.3, 0.1), clamp=None, hook_post=None, k_ret=1.0, ret_side='both',
-           init=None, save_at=None, on_save=None, var_gas=None):
+           init=None, save_at=None, on_save=None, var_gas=None, closing=None):
     GA = H.ga_rate if ga is None else ga; GB = H.gb_persist if gb is None else gb
     # state: serve & return (identical when split=False), general + per surface
     sg = defaultdict(float); rg = defaultdict(float)
@@ -133,7 +133,14 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
             q_mr = min(max(S.match_from_set_prob(q_set, bo), 1e-6), 1 - 1e-6)
             q_mc = min(max(S.sigmoid(H.CAL_I + H.CAL_S * S.logit(q_mr)), 1e-6), 1 - 1e-6)
             e_c = sets[0] - n_set * H.inv_match(round(q_mc, 4), bo)
-            c[a] = H.CLOSING_B2 * c[a] + H.CLOSING_A2 * e_c; c[b] = H.CLOSING_B2 * c[b] - H.CLOSING_A2 * e_c
+            if closing is None:
+                c[a] = H.CLOSING_B2 * c[a] + H.CLOSING_A2 * e_c; c[b] = H.CLOSING_B2 * c[b] - H.CLOSING_A2 * e_c
+            else:
+                # closing=(a_min, a_max, n0, b): the step shrinks from a_max to a_min as the player's matches add up
+                # (large while little is known about the player, like a Kalman gain), persistence b
+                c_lo, c_hi, c_n0, c_b = closing
+                ga_ = c_lo + (c_hi - c_lo) * c_n0 / (c_n0 + nm[a]); gb_ = c_lo + (c_hi - c_lo) * c_n0 / (c_n0 + nm[b])
+                c[a] = c_b * c[a] + ga_ * e_c; c[b] = c_b * c[b] - gb_ * e_c
 
         # ---- surprise: u_s = a's serve part, u_r = a's return part (b gets the mirror) ----
         if uo: gw = gl = ng = 0
