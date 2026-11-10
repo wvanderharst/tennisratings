@@ -8,6 +8,9 @@ All ratings in production GAME-logit units. Point scale = rating / PT_M.
          "serve":  per-serve surprise    (a's serve points vs pa, a's return points vs 1 - pb)
   split  False: one rating (s = r = phi);  True: separate serve and return ratings
          (single-rating update of size u becomes serve 2*u_serve, return 2*u_return, so the SUM moves the same)
+  speed  (beta0, k_beta): the serve baseline becomes mu[surface] + beta * r["spd"], r["spd"] = the event's court speed
+         (court_speed_lib, log ace ratio, pre-match) minus a fixed surface centre; beta is learned online. Fast courts
+         then no longer read as better serving / worse returning (match odds barely move: both players shift equally).
 """
 import math
 from collections import defaultdict
@@ -24,13 +27,14 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
            pred="game", resid="pooled", split=False, k_s=1.0, k_r=1.0, blend_s=0.6, blend_r=0.6, gain_early=1.0, gain_settle=15.0,
            gb=None, ga=None, mu_k=0.0005, h2h=True, hm=1.0, res_hm=False, k_d=1.0, hook=None, surf_k=1.0, surf_early=1.0, surf_settle=10.0,
            gap=False, lam=0.4, gwt=(0.6, 0.3, 0.1), clamp=None, hook_post=None, k_ret=1.0, ret_side='both',
-           init=None, save_at=None, on_save=None, var_gas=None, closing=None):
+           init=None, save_at=None, on_save=None, var_gas=None, closing=None, speed=None):
     GA = H.ga_rate if ga is None else ga; GB = H.gb_persist if gb is None else gb
     # state: serve & return (identical when split=False), general + per surface
     sg = defaultdict(float); rg = defaultdict(float)
     ss = {x: defaultdict(float) for x in SURF}; rs = {x: defaultdict(float) for x in SURF}; ns = {x: defaultdict(int) for x in SURF}
     c = defaultdict(float); last = {}; seen = set(); hh = defaultdict(lambda: defaultdict(int)); ftab = {}
     mu = defaultdict(lambda: 0.55); nm = defaultdict(int)
+    beta = [speed[0] if speed else 0.0]                  # court-speed coefficient (see the module docstring)
     # optional: score-driven variance per player (consistency_gas.py); the level update is scaled by
     # ((V0 + n) / (V_player + n)) ** gamma, n = the match's point noise (GAS: the mean's score divided by the variance)
     if var_gas: vg_w, vg_a, vg_b, vg_d, vg_g = (var_gas[k] for k in ("w", "a", "b", "d", "gamma")); fv = defaultdict(lambda: vg_w); fvd = {}
@@ -42,13 +46,13 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
         sg.update(init["sg"]); rg.update(init["rg"]); c.update(init["c"]); last.update(init["last"]); seen.update(init["seen"])
         for x in SURF: ss[x].update(init["ss"][x]); rs[x].update(init["rs"][x]); ns[x].update(init["ns"][x])
         for k_, v_ in init["hh"].items(): hh[k_].update(v_)
-        ftab.update(init["ftab"]); mu.update(init["mu"]); nm.update(init["nm"])
+        ftab.update(init["ftab"]); mu.update(init["mu"]); nm.update(init["nm"]); beta[0] = init.get("beta", beta[0])
         for A, k_ in ((S4, "S4"), (out, "out"), (alt, "alt"), (dsv, "dsv"), (drt, "drt")): A[:start] = init[k_]
 
     def snapshot(i):
         return dict(i=i, gap=gap, sg=dict(sg), rg=dict(rg), c=dict(c), last=dict(last), seen=set(seen),
                     ss={x: dict(ss[x]) for x in SURF}, rs={x: dict(rs[x]) for x in SURF}, ns={x: dict(ns[x]) for x in SURF},
-                    hh={k_: dict(v_) for k_, v_ in hh.items()}, ftab=dict(ftab), mu=dict(mu), nm=dict(nm),
+                    hh={k_: dict(v_) for k_, v_ in hh.items()}, ftab=dict(ftab), mu=dict(mu), nm=dict(nm), beta=beta[0],
                     S4=S4[:i].copy(), out=out[:i].copy(), alt=alt[:i].copy(), dsv=dsv[:i].copy(), drt=drt[:i].copy())
 
     def qmap(x, gsort, ssort):
@@ -107,7 +111,8 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
         if not split:                              # one rating: serve and return identical by construction
             ra, rb = sa, sb
         gap = 0.5 * ((sa + ra) - (sb + rb))
-        m = mu[surf or "Hard"]
+        spd = r.get("spd", 0.0) if speed else 0.0
+        m = mu[surf or "Hard"] + beta[0] * spd
         pa = min(max(S.sigmoid(m + (sa - rb) / pt_m), 0.02), 0.98); pb = min(max(S.sigmoid(m + (sb - ra) / pt_m), 0.02), 0.98)
         q_game = min(max(S.sigmoid(gap), 1e-6), 1 - 1e-6); qs_g = H.set_prob(round(q_game, 4))
         ha = min(max(S.sigmoid(m + hm * (sa - rb) / pt_m), 0.02), 0.98); hb = min(max(S.sigmoid(m + hm * (sb - ra) / pt_m), 0.02), 0.98)
@@ -160,6 +165,7 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
                 ea_, eb_ = (ha, hb) if res_hm else (pa, pb)
                 ps_ = (sw - sn * ea_) * pt_c / pt_m; pr_ = (rw - rn * (1 - eb_)) * pt_c / pt_m
             if mu_k: mu[surf or "Hard"] += mu_k * ((sw + rn - rw) / (sn + rn) - S.sigmoid(m))
+            if speed and spd: beta[0] += speed[1] * ((sw + rn - rw) / (sn + rn) - S.sigmoid(m)) * spd
             u_s = (1 - pt_lam) * u_s + pt_lam * ps_; u_r = (1 - pt_lam) * u_r + pt_lam * pr_
             if uo: u_s, u_r = ps_, pr_
         aa, ab = age_at(a, when), age_at(b, when)
@@ -223,13 +229,29 @@ def replay(rows, age_at, init_rank, init_prior, age_drift=(0.05, 0.01, 24, 30), 
                             for x in SURF: D[x][p] += sh
         if hook_post is not None: hook_post(i, r, dict(sg=sg, rg=rg, ss=ss, rs=rs, c=c))
     if save_at == n: on_save(snapshot(n))
-    return out, dict(sg=sg, rg=rg, ss=ss, rs=rs, ns=ns, c=c, mu=dict(mu), last=last, dsv=dsv, drt=drt, alt=alt, S4=S4)
+    return out, dict(sg=sg, rg=rg, ss=ss, rs=rs, ns=ns, c=c, mu=dict(mu), beta=beta[0], last=last, dsv=dsv, drt=drt, alt=alt, S4=S4)
 
 
-def build_ext(allrows):
+# mean pre-match court speed per surface (log ace ratio, events with ace history, Nov 2026 data); fixed so that a
+# weekly data update does not shift the speed of every past match
+SPEED_CENTRE = {"atp": {"Hard": 0.408, "Clay": 0.04, "Grass": 0.608, "Carpet": 0.546},
+                "wta": {"Hard": 0.215, "Clay": -0.085, "Grass": 0.371, "Carpet": 0.121}}
+
+
+def attach_speed(allrows, ext, tour):
+    """Set r["spd"] on the rated rows of ext (court speed of the event minus its surface centre; 0 without ace history)."""
+    import court_speed_lib as CSL
+    cs = CSL.build(allrows, tag=f"court_{tour}"); sp, has = cs["speed"], cs["has_speed"]
+    rated = [r for r in ext if not r.get("upd_only")]
+    assert len(rated) == len(sp), (len(rated), len(sp))
+    cen = SPEED_CENTRE[tour]
+    for r, v, h in zip(rated, sp, has): r["spd"] = float(v - cen.get(r["surf"] or "Hard", 0.0)) if h else 0.0
+
+
+def build_ext(allrows, tour=None):
     """Rows for the rating replay: every rated (completed) match, plus retirements and walkovers as update-only rows
     (a retirement with serve stats updates ONLY the player who did not retire, from the points played; walkovers
-    update nothing but count for layoff dates). Returns (ext rows, index of rated rows in ext, original row id -> ext index)."""
+    update nothing but count for layoff dates). With tour: also the court speed of each rated row (attach_speed). Returns (ext rows, index of rated rows in ext, original row id -> ext index)."""
     ext, rated_idx, where = [], [], {}
     for r in allrows:
         done = S.parse_sets(r["score"]) and parse_games(r["score"]) and not (r["ret"] or r["wo"] or r["dq"])
@@ -238,6 +260,7 @@ def build_ext(allrows):
         elif (r["ret"] or r["wo"]) and not r["dq"]:
             q = dict(r); q["upd_only"] = True; q["_oid"] = id(r); q["pts"] = r["pts"] if (r["ret"] and not r["wo"]) else None
             where[id(r)] = len(ext); ext.append(q)
+    if tour: attach_speed(allrows, ext, tour)
     return ext, np.array(rated_idx), where
 
 

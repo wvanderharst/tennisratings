@@ -50,7 +50,7 @@ def hook(i, r, X):
             st[p] = (v, v, 0.0)
     bo = max(m["bo"] for m in L)
     snap[tid] = dict(when=when, st=st, rank=rank, mu=X["mu"][surf or "Hard"], bo=bo, slam=r["lvl"] == "G")
-EXT, RIDX, _ = CE.build_ext(allrows)
+EXT, RIDX, _ = CE.build_ext(allrows, T)
 CE.replay_ckpt(f"titles_{T}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=dict(snap=snap), hook=hook, **CFG)
 RF = json.load(open(f"{OUT}/ret_fit_{T}.json"))
 

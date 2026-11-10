@@ -171,7 +171,7 @@ def hook(i, r, X):
                     if new_ld: peak_lead[p] = v
     mc[a] += 1; mc[b] += 1
 
-EXT, RIDX, _ = CE.build_ext(allrows)
+EXT, RIDX, _ = CE.build_ext(allrows, TOUR)
 carry = dict(stab=stab, stab_t=stab_t, mc=mc, first=first, fill=fill, thr_m=thr_m, thr_w=thr_w, snaps=snaps, snaps_f=snaps_f,
              markers=markers, state=state, ptr=ptr, queries=queries, CUR_I=CUR_I, peak=peak, peak_lead=peak_lead)
 z, _ = CE.replay_ckpt(f"traj_{TOUR}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=carry,

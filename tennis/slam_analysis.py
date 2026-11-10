@@ -51,7 +51,7 @@ def hook(i, r, X):
             if rk: v = min(max(CFE["init_rank"][0] - CFE["init_rank"][1] * (math.log(rk) - math.log(100.0)), -1.5), 1.0)
             st[p] = (v, v, 0.0)
     snap[tid] = dict(when=when, surf=surf, st=st, rank=rank, mu=X["mu"][surf or "Hard"], name=r["tname"])
-EXT, RIDX, _ = CE.build_ext(allrows)
+EXT, RIDX, _ = CE.build_ext(allrows, T)
 CE.replay_ckpt(f"slams_{T}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], carry=dict(snap=snap), hook=hook, **CFG)
 RF = json.load(open(f"{OUT}/ret_fit_{T}.json")); RR, BB = RF["r_slam"], max(0.0, RF["b_slam"])
 

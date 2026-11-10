@@ -15,6 +15,7 @@ for r in allrows:
     elif (r["ret"] or r["wo"]) and not r["dq"]:
         q = dict(r); q["upd_only"] = True; q["pts"] = r["pts"] if (r["ret"] and not r["wo"]) else None; ext.append(q); kind.append(1 if r["ret"] else 2)
 rated_idx = np.array(rated_idx); kind = np.array(kind)
+CE.attach_speed(allrows, ext, T)          # same rows as build_ext(allrows, T): shares the rating_{T} checkpoint
 wext = np.array([r["when"].toordinal() for r in ext]); lvl = np.array([r["lvl"] == "G" for r in ext]); bo = np.array([r["bo"] for r in ext])
 C = np.load(f"cache_{T}.npz"); corr, when = C["corr"], C["when"]; fm, vm, tr, te = C["fm"], C["vm"], C["tr"], C["te"]
 ALL = when >= datetime.date(2005, 1, 1).toordinal(); L = lambda z: np.logaddexp(0, -z)

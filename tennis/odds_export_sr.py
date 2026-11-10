@@ -30,7 +30,7 @@ SURF = H.SURFACES; PT_M = 2.132; HM = CFG["hm"]; BW = 0.6
 allrows = H.load()
 rows = [r for r in allrows if S.parse_sets(r["score"]) and parse_games(r["score"]) and not (r["ret"] or r["wo"] or r["dq"])]
 n = len(rows)
-EXT, RIDX, _ = CE.build_ext(allrows)
+EXT, RIDX, _ = CE.build_ext(allrows, TOUR)
 z, st = CE.replay_ckpt(f"rating_{TOUR}", allrows, EXT, H.age_at, CFE["init_rank"], CFE["init_prior"], **CFG); z = z[RIDX]
 sg, rg, ss, rs, ns, c, mu, last = (st[k] for k in ("sg", "rg", "ss", "rs", "ns", "c", "mu", "last"))
 

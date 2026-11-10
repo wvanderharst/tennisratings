@@ -25,7 +25,7 @@ CFE = json.load(open(f"{OUT}/confounder_fit_v21e.json")); CFG = json.load(open(f
 SURF = H.SURFACES; LAM = CFG.get("lam", 0.4); NB = 48
 allrows = H.load()
 rows = [r for r in allrows if S.parse_sets(r["score"]) and parse_games(r["score"]) and not (r["ret"] or r["wo"] or r["dq"])]
-EXT, RIDX, WHERE = CE.build_ext(allrows)
+EXT, RIDX, WHERE = CE.build_ext(allrows, TOUR)
 
 def state(p, surf, X):
     s, r_ = X["sg"][p], X["rg"][p]
